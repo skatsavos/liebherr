@@ -1,0 +1,6 @@
+DOMAIN = "liebherr"
+BASE_API_URL = "https://mobile-api.smartdevice.liebherr.com/v1/household/appliances"
+AUTH_URL = "https://login.liebherr.com/connect/authorize"
+TOKEN_URL = "https://login.liebherr.com/connect/token"
+REDIRECT_URI = "com.liebherr.hau.smartdevice://auth"
+CLIENT_ID = "ae526c20-1467-4d46-a061-bbc203573d1a"

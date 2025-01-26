@@ -1,0 +1,13 @@
+{
+    "name": "Liebherr",
+    "description": "A Home Assistant integration that allows you to connect and control Liebherr smart appliances.",
+    "domain": "liebherr",
+    "codeowners": [
+        "@bhuebschen"
+    ],
+    "requirements": [],
+    "documentation": "https://github.com/bhuebschen/liebherr",
+    "issue_tracker": "https://github.com/bhuebschen/liebherr/issues",
+    "version": "0.0.1",
+    "config_flow": true
+}
