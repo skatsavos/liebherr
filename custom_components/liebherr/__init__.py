@@ -51,7 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     await coordinator.async_refresh()
 
     if not coordinator.data:
-        _LOGGER.warning("No initial data retrieved from Liebherr API.")
+        _LOGGER.warning("No initial data retrieved from Liebherr API")
 
     await hass.config_entries.async_forward_entry_setups(
         config_entry, ["climate", "switch"]
@@ -68,7 +68,9 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 
 
 class LiebherrAPI:
-    def __init__(self, hass: HomeAssistant, config: dict):
+    """Liebherr API Class."""
+
+    def __init__(self, hass: HomeAssistant, config: dict) -> None:
         """Initialize the Liebherr API."""
         self._hass = hass
         self._session = async_get_clientsession(hass)
@@ -76,7 +78,8 @@ class LiebherrAPI:
         self._password = config.get("password")
         self._token = None
         self._code_verifier = self._generate_code_verifier()
-        self._code_challenge = self._generate_code_challenge(self._code_verifier)
+        self._code_challenge = self._generate_code_challenge(
+            self._code_verifier)
 
     def _generate_code_verifier(self):
         """Generate a secure code verifier."""
@@ -121,7 +124,8 @@ class LiebherrAPI:
                     "Failed to retrieve the initial authentication page: %s",
                     response.status,
                 )
-                raise Exception("Failed to retrieve initial authentication page.")
+                raise Exception(
+                    "Failed to retrieve initial authentication page.")
 
             html = await response.text()
             verification_token = self._extract_verification_token(html)
@@ -139,13 +143,15 @@ class LiebherrAPI:
             login_url, headers=headers, data=login_data, allow_redirects=False
         ) as response:
             if response.status not in (302, 200):
-                _LOGGER.error("Login failed with status code: %s", response.status)
-                raise Exception("Failed to log in to Liebherr API.")
+                _LOGGER.error(
+                    "Login failed with status code: %s", response.status)
+                raise Exception("Failed to log in to Liebherr API")
 
             redirect_location = response.headers.get("Location")
             if not redirect_location:
-                _LOGGER.error("Failed to extract redirect URL from login response.")
-                raise Exception("Missing redirect URL after login.")
+                _LOGGER.error(
+                    "Failed to extract redirect URL from login response")
+                raise Exception("Missing redirect URL after login")
 
         # Step 3: Retrieve authorization code
         async with self._session.get(callback_url, allow_redirects=False) as response:
@@ -153,19 +159,22 @@ class LiebherrAPI:
                 _LOGGER.error(
                     "Failed to retrieve authorization code: %s", response.status
                 )
-                raise Exception("Failed to retrieve authorization code.")
+                raise Exception("Failed to retrieve authorization code")
 
             location_header = response.headers.get("Location")
             if not location_header:
-                _LOGGER.error("Missing Location header in response.")
-                raise Exception("Missing Location header for authorization code.")
+                _LOGGER.error("Missing Location header in response")
+                raise Exception(
+                    "Missing Location header for authorization code")
 
-            query_params = self._parse_query_params(location_header.split("?")[-1])
+            query_params = self._parse_query_params(
+                location_header.split("?")[-1])
             authorization_code = query_params.get("code", [None])[0]
 
             if not authorization_code:
-                _LOGGER.error("Authorization code not found in redirect response.")
-                raise Exception("Missing authorization code.")
+                _LOGGER.error(
+                    "Authorization code not found in redirect response")
+                raise Exception("Missing authorization code")
 
         # Step 4: Exchange authorization code for access token
         token_data = {
@@ -183,14 +192,16 @@ class LiebherrAPI:
                 _LOGGER.error(
                     "Token exchange failed with status code: %s", response.status
                 )
-                raise Exception("Failed to exchange authorization code for token.")
+                raise Exception(
+                    "Failed to exchange authorization code for token")
 
             token_response = await response.json()
             self._token = token_response.get("access_token")
 
             if not self._token:
-                _LOGGER.error("Failed to retrieve access token: %s", token_response)
-                raise Exception("Missing access token in token response.")
+                _LOGGER.error(
+                    "Failed to retrieve access token: %s", token_response)
+                raise Exception("Missing access token in token response")
 
     def _extract_verification_token(self, html):
         """Extract the RequestVerificationToken from the HTML page."""
@@ -200,7 +211,7 @@ class LiebherrAPI:
         )
         if not match:
             _LOGGER.error("HTML content: %s", html)
-            raise Exception("Verification token not found in HTML.")
+            raise Exception("Verification token not found in HTML")
         return match.group(1)
 
     def _extract_ncforminfo(self, html):
@@ -211,7 +222,7 @@ class LiebherrAPI:
         )
         if not match:
             _LOGGER.error("HTML content: %s", html)
-            raise Exception("ncforminfo not found in HTML.")
+            raise Exception("ncforminfo not found in HTML")
         return match.group(1)
 
     def _parse_query_params(self, query):
@@ -231,13 +242,14 @@ class LiebherrAPI:
         }
         async with self._session.get(BASE_API_URL, headers=headers) as response:
             if response.status != 200:
-                _LOGGER.error("Failed to fetch appliances: %s", response.status)
+                _LOGGER.error("Failed to fetch appliances: %s",
+                              response.status)
                 if response.status == 401:
                     await self.authenticate()
                 return []
 
             data = await response.json()
-            appliances = [
+            return [
                 {
                     "deviceId": appliance["deviceId"],
                     "model": appliance["applianceName"],
@@ -250,7 +262,6 @@ class LiebherrAPI:
                 }
                 for appliance in data
             ]
-            return appliances
 
     async def get_controls(self, device_id):
         """Retrieve controls for a specific appliance."""
@@ -295,16 +306,15 @@ class LiebherrAPI:
         async with self._session.put(url, headers=headers, json=payload) as response:
             if response.status != 200:
                 _LOGGER.error("Failed to set control: %s", response.status)
-        self.get_appliances()
 
-    async def set_value(self, endpoint, payload):
+    async def set_value(self, endpoint, value):
         """Activate or deactivate a control."""
         url = f"{BASE_API_URL}/{endpoint}"
         headers = {
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json",
         }
-        payload = payload
+        payload = value
 
         async with self._session.put(url, headers=headers, json=payload) as response:
             if response.status != 204:

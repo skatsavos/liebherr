@@ -3,6 +3,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 import logging
 from .const import DOMAIN
+import asyncio
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,15 +21,17 @@ async def async_setup_entry(
     for appliance in appliances:
         controls = await api.get_controls(appliance["deviceId"])
         if not controls:
-            _LOGGER.warning("No controls found for appliance %s", appliance["deviceId"])
+            _LOGGER.warning("No controls found for appliance %s",
+                            appliance["deviceId"])
             continue
 
         for control in controls:
             if control["controlType"] in ("toggle", "icemaker", "bottletimer"):
-                entities.append(LiebherrSwitch(api, coordinator, appliance, control))
+                entities.append(LiebherrSwitch(
+                    api, coordinator, appliance, control))
 
     if not entities:
-        _LOGGER.error("No switch entities created.")
+        _LOGGER.error("No switch entities created")
 
     async_add_entities(entities)
 
@@ -36,7 +39,7 @@ async def async_setup_entry(
 class LiebherrSwitch(SwitchEntity):
     """Representation of a Liebherr switch entity."""
 
-    def __init__(self, api, coordinator, appliance, control):
+    def __init__(self, api, coordinator, appliance, control) -> None:
         """Initialize the switch entity."""
         self._api = api
         self._coordinator = coordinator
@@ -64,7 +67,7 @@ class LiebherrSwitch(SwitchEntity):
     def is_on(self):
         """Return true if the switch is on."""
         if not self._coordinator.data:
-            _LOGGER.error("Coordinator data is empty.")
+            _LOGGER.error("Coordinator data is empty")
             return False
 
         controls = []
@@ -98,9 +101,11 @@ class LiebherrSwitch(SwitchEntity):
             )
         if self._control["controlType"] == "toggle":
             await self._api.set_active(
-                self._appliance["deviceId"] + "/" + self._control["endpoint"], True
+                self._appliance["deviceId"] + "/" +
+                self._control["endpoint"], True
             )
         # TODO: autodoor, presentationlight, biofresh, hydrobreeze, biofreshplus
+        await asyncio.sleep(5)
         await self._coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs):
@@ -117,6 +122,8 @@ class LiebherrSwitch(SwitchEntity):
             )
         if self._control["controlType"] == "toggle":
             await self._api.set_active(
-                self._appliance["deviceId"] + "/" + self._control["endpoint"], False
+                self._appliance["deviceId"] + "/" +
+                self._control["endpoint"], False
             )
+        await asyncio.sleep(5)
         await self._coordinator.async_request_refresh()

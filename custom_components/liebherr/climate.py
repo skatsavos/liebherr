@@ -2,21 +2,20 @@ from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import HVACMode
 from homeassistant.components.climate.const import ClimateEntityFeature
 from homeassistant.const import ATTR_TEMPERATURE
-from datetime import timedelta
+from homeassistant.core import HomeAssistant
 import logging
 from .const import DOMAIN
-from .switch import LiebherrSwitch
+import asyncio
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass, config_entry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entities):
     """Set up Liebherr appliances as devices and entities from a config entry."""
     api = hass.data[DOMAIN][config_entry.entry_id]["api"]
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
     appliances = await api.get_appliances()
-    entities = []
     entities = []
     for appliance in appliances:
         controls = await api.get_controls(appliance["deviceId"])
@@ -25,17 +24,24 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                             appliance["deviceId"])
             continue
 
-        for appliance in appliances:
-            if appliance["applianceType"] in [
-                "FRIDGE",
-                "FREEZER",
-                "COMBI",
-                "WINE",
-            ]:
-                for control in controls:
-                    if control["controlType"] in ("temperature"):
-                        entities.append(LiebherrClimate(
-                            coordinator, api, appliance, controls))
+        if appliance["applianceType"] in [
+            "FRIDGE",
+            "FREEZER",
+            "COMBI",
+            "WINE",
+        ]:
+            for control in controls:
+                if control.get("controlType") == "temperature":
+                    _LOGGER.debug(
+                        "Adding climate entity for %s",
+                        appliance.get("deviceId")
+                        + "_"
+                        + control.get("identifier",
+                                      control.get("controlType")),
+                    )
+                    entities.append(
+                        LiebherrClimate(coordinator, api, appliance, control)
+                    )
 
     async_add_entities(entities)
 
@@ -43,15 +49,23 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 class LiebherrClimate(ClimateEntity):
     """Representation of a Liebherr climate entity."""
 
-    def __init__(self, coordinator, api, appliance, controls):
+    def __init__(self, coordinator, api, appliance, control) -> None:
         """Initialize the climate entity."""
         self.coordinator = coordinator
         self.api = api
-        self._controls = controls
+        self._control = control
+        self._identifier = control.get(
+            "identifier", control.get("controlType"))
         self._appliance = appliance
-        self._attr_name = appliance.get("nickname", appliance["deviceId"])
-        self._attr_unique_id = appliance["deviceId"]
-        self._attr_temperature_unit = "°C"
+        self._endpoint = control.get("endpoint", "/zones/0/temperature")
+        self._attr_name = appliance.get("nickname", appliance.get("deviceId"))
+        self._attr_unique_id = (
+            "liebherr_" + appliance.get("deviceId") + "_" + self._identifier
+        )
+        self._attr_target_temperature_step = 1
+        self._attr_temperature_unit = (
+            "°C" if control.get("temperatureUnit") == "CELSIUS" else "°F"
+        )
         self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
         self._attr_hvac_modes = [HVACMode.COOL, HVACMode.OFF]
         self._attr_hvac_mode = HVACMode.COOL
@@ -72,35 +86,46 @@ class LiebherrClimate(ClimateEntity):
         """Set the target temperature."""
         if ATTR_TEMPERATURE in kwargs:
             temperature = kwargs[ATTR_TEMPERATURE]
-            endpoint = f"{self._appliance['deviceId']}/zones/0/temperature"
+            endpoint = f"{self._appliance['deviceId']}/{self._endpoint}"
+
+            self._attr_target_temperature = temperature
+            self.async_write_ha_state()
+
             await self.api.set_temperature(endpoint, temperature)
+            await asyncio.sleep(5)
             await self.coordinator.async_request_refresh()
 
     @property
     def target_temperature(self):
         """Return the target temperature."""
-        controls = self._controls
-        for control in controls:
-            if control.get("controlType") == "temperature":
-                return control.get("target")
+        for device in self.coordinator.data:
+            if device.get("deviceId") == self._appliance["deviceId"]:
+                controls = device.get("controls", [])
+                for control in controls:
+                    if self._endpoint == control.get("endpoint"):
+                        return control.get("target")
         return None
 
     @property
     def min_temp(self):
         """Return the minimum temperature that can be set."""
-        controls = self._controls
-        for control in controls:
-            if control.get("controlType") == "temperature":
-                return control.get("min", -24)
+        for device in self.coordinator.data:
+            if device.get("deviceId") == self._appliance["deviceId"]:
+                controls = device.get("controls", [])
+                for control in controls:
+                    if self._endpoint == control.get("endpoint"):
+                        return control.get("min", -24)
         return -24
 
     @property
     def max_temp(self):
         """Return the maximum temperature that can be set."""
-        controls = self._controls
-        for control in controls:
-            if control.get("controlType") == "temperature":
-                return control.get("max", 15)
+        for device in self.coordinator.data:
+            if device.get("deviceId") == self._appliance["deviceId"]:
+                controls = device.get("controls", [])
+                for control in controls:
+                    if self._endpoint == control.get("endpoint"):
+                        return control.get("max", 15)
         return 15
 
     @property
@@ -110,7 +135,7 @@ class LiebherrClimate(ClimateEntity):
             if device.get("deviceId") == self._appliance["deviceId"]:
                 controls = device.get("controls", [])
                 for control in controls:
-                    if control.get("controlType") == "temperature":
+                    if self._endpoint == control.get("endpoint"):
                         return control.get("current")
         return None
 
@@ -123,8 +148,10 @@ class LiebherrClimate(ClimateEntity):
         """Set the HVAC mode."""
         if hvac_mode in self._attr_hvac_modes:
             self._attr_hvac_mode = hvac_mode
+            await asyncio.sleep(5)
             await self.coordinator.async_request_refresh()
 
     async def async_update(self):
         """Fetch the latest data from the API."""
+        await asyncio.sleep(5)
         await self.coordinator.async_request_refresh()
