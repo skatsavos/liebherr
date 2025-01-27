@@ -8,6 +8,6 @@
     "requirements": [],
     "documentation": "https://github.com/bhuebschen/liebherr",
     "issue_tracker": "https://github.com/bhuebschen/liebherr/issues",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "config_flow": true
 }

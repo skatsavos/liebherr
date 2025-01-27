@@ -1,0 +1,1 @@
+0.0.2: add each "temperature" control from the applicance-controls as climate entity

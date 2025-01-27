@@ -17,16 +17,25 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     appliances = await api.get_appliances()
     entities = []
-
+    entities = []
     for appliance in appliances:
         controls = await api.get_controls(appliance["deviceId"])
-        if appliance["applianceType"] in [
-            "FRIDGE",
-            "FREEZER",
-            "COMBI",
-            "WINE",
-        ]:
-            entities.append(LiebherrClimate(coordinator, api, appliance, controls))
+        if not controls:
+            _LOGGER.warning("No controls found for appliance %s",
+                            appliance["deviceId"])
+            continue
+
+        for appliance in appliances:
+            if appliance["applianceType"] in [
+                "FRIDGE",
+                "FREEZER",
+                "COMBI",
+                "WINE",
+            ]:
+                for control in controls:
+                    if control["controlType"] in ("temperature"):
+                        entities.append(LiebherrClimate(
+                            coordinator, api, appliance, controls))
 
     async_add_entities(entities)
 
