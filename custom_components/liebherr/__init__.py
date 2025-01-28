@@ -520,7 +520,7 @@ class LiebherrAPI:
         """Send acknowledgment to the API."""
         try:
             url = f"https://mobile-api.smartdevice.liebherr.com/v1/household/notifications/{notification['deviceId']}/{notification['notificationId']}"
-            await self.api.acknowledge_notification(url)
+            await self.acknowledge_notification(url)
         except Exception as e:
             self._hass.components.persistent_notification.create(
                 message=f"Failed to acknowledge notification: {str(e)}",
