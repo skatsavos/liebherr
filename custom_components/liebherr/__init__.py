@@ -428,7 +428,7 @@ class LiebherrAPI:
                 if notification.get("isAcknowledged", False)
             ]
             for notification in acknowledged_notifications:
-                await self._acknowledge_notification(notification)
+                await self._acknowledge_notification(self, notification)
 
             return filtered_notifications
         except Exception as e:
@@ -506,7 +506,7 @@ class LiebherrAPI:
             """Handle the dismiss event."""
             if event.data.get("notification_id") == notification_id:
                 # Sende den Acknowledgment-Request
-                await self._acknowledge_notification(notification)
+                await self._acknowledge_notification(self, notification)
                 # Entferne den Listener
                 self._hass.bus.async_listen(
                     "persistent_notification.dismiss", dismiss_handler
