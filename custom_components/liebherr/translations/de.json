@@ -1,0 +1,17 @@
+{
+    "title": "Liebherr SmartDevice",
+    "options": {
+        "step": {
+            "init": {
+                "title": "Benachrichtigungen",
+                "description": "Wenn Sie Alarme und Benachrichtigungen für Ihre Liebherr-Geräte erhalten möchten, wählen Sie bitte die Geräte aus, für die Sie Benachrichtigungen erhalten möchten.",
+                "data": {
+                    "devices_to_notify": "Geräte, für die Sie Benachrichtigungen erhalten möchten:"
+                }
+            }
+        }
+    },
+    "notificationType": {
+        "door_alarm": "Türalarm"
+    }
+}

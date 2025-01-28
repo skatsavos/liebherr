@@ -1,2 +1,3 @@
 0.0.2: add each "temperature" control from the applicance-controls as climate entity
 0.0.3: fixed unique_id for multiple climate entities, cleaned up code, added delay for update, fixed endpoint for climate
+0.0.4: Notifications

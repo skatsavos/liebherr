@@ -71,7 +71,8 @@ class LiebherrSwitch(SwitchEntity):
             return False
 
         controls = []
-        for device in self._coordinator.data:
+        appliances = self._coordinator.data.get("appliances", [])
+        for device in appliances:
             if device.get("deviceId") == self._appliance["deviceId"]:
                 controls = device.get("controls", [])
                 for control in controls:

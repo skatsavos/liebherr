@@ -98,7 +98,8 @@ class LiebherrClimate(ClimateEntity):
     @property
     def target_temperature(self):
         """Return the target temperature."""
-        for device in self.coordinator.data:
+        appliances = self.coordinator.data.get("appliances", [])
+        for device in appliances:
             if device.get("deviceId") == self._appliance["deviceId"]:
                 controls = device.get("controls", [])
                 for control in controls:
@@ -109,7 +110,8 @@ class LiebherrClimate(ClimateEntity):
     @property
     def min_temp(self):
         """Return the minimum temperature that can be set."""
-        for device in self.coordinator.data:
+        appliances = self.coordinator.data.get("appliances", [])
+        for device in appliances:
             if device.get("deviceId") == self._appliance["deviceId"]:
                 controls = device.get("controls", [])
                 for control in controls:
@@ -120,7 +122,8 @@ class LiebherrClimate(ClimateEntity):
     @property
     def max_temp(self):
         """Return the maximum temperature that can be set."""
-        for device in self.coordinator.data:
+        appliances = self.coordinator.data.get("appliances", [])
+        for device in appliances:
             if device.get("deviceId") == self._appliance["deviceId"]:
                 controls = device.get("controls", [])
                 for control in controls:
@@ -131,7 +134,8 @@ class LiebherrClimate(ClimateEntity):
     @property
     def current_temperature(self):
         """Return the current temperature."""
-        for device in self.coordinator.data:
+        appliances = self.coordinator.data.get("appliances", [])
+        for device in appliances:
             if device.get("deviceId") == self._appliance["deviceId"]:
                 controls = device.get("controls", [])
                 for control in controls:

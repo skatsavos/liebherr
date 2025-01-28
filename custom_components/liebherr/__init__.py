@@ -3,7 +3,6 @@ import secrets
 import hashlib
 import base64
 import re
-import aiohttp
 import voluptuous as vol
 from urllib.parse import parse_qs
 from datetime import timedelta
@@ -17,7 +16,22 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant import config_entries
 from homeassistant.core import callback
-from .const import DOMAIN, BASE_API_URL, CLIENT_ID, REDIRECT_URI, TOKEN_URL
+from .const import (
+    DOMAIN,
+    BASE_URL,
+    BASE_API_URL,
+    CLIENT_ID,
+    REDIRECT_URI,
+    TOKEN_URL,
+    DOOR_ALARM,
+)
+import ssl
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from aiohttp import ClientSession, TCPConnector
+from homeassistant.helpers.device_registry import async_get as async_get_device_registry
+from homeassistant.util.dt import as_local, parse_datetime
+import json
+from pathlib import Path
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,11 +47,28 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         _LOGGER.error("Failed to authenticate: %s", e)
         return False
 
+    async def async_update_method():
+        """Fetch both appliances and notifications."""
+        try:
+            # Geräte abrufen
+            appliances = await api.get_appliances()
+
+            # Benachrichtigungen abrufen
+            filtered_notifications = await api.fetch_notifications(config_entry)
+
+            # Kombinierte Daten zurückgeben
+            return {
+                "appliances": appliances,
+                "notifications": filtered_notifications,
+            }
+        except Exception as e:
+            raise Exception(f"Error updating Liebherr data: {e}")
+
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
         name="Liebherr devices",
-        update_method=api.get_appliances,
+        update_method=async_update_method,
         update_interval=timedelta(
             seconds=config_entry.options.get("update_interval", 30)
         ),
@@ -72,14 +103,23 @@ class LiebherrAPI:
 
     def __init__(self, hass: HomeAssistant, config: dict) -> None:
         """Initialize the Liebherr API."""
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
         self._hass = hass
-        self._session = async_get_clientsession(hass)
+        self.connector = TCPConnector(ssl=ssl_context)
+
+        self._session = ClientSession(
+            connector=self.connector
+        )  # async_get_clientsession(hass, ssl_context=ssl_context)
+
         self._username = config.get("username")
         self._password = config.get("password")
         self._token = None
         self._code_verifier = self._generate_code_verifier()
         self._code_challenge = self._generate_code_challenge(
             self._code_verifier)
+        self.translations = self._load_translations()
 
     def _generate_code_verifier(self):
         """Generate a secure code verifier."""
@@ -335,6 +375,182 @@ class LiebherrAPI:
                 _LOGGER.error("Failed to set control: %s", response.status)
         self.get_appliances()
 
+    async def get_notifications(self):
+        """Retrieve notifications from the Liebherr API."""
+        url = f"{BASE_URL}/notifications"
+        headers = {
+            "Authorization": f"Bearer {self._token}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            async with self._session.get(url, headers=headers) as response:
+                _LOGGER.debug("Fetching notifications: %s", response.status)
+                if response.status == 200:
+                    # Parse JSON response
+                    _LOGGER.debug("Fetching notifications: %s", await response.text())
+                    return await response.json()
+                _LOGGER.error(
+                    "Failed to fetch notifications: %s - %s",
+                    response.status,
+                    await response.text(),
+                )
+                return []
+        except Exception as e:
+            _LOGGER.error("Error fetching notifications: %s", e)
+            return []
+
+    async def fetch_notifications(self, config_entry):
+        """Fetch notifications from the Liebherr API."""
+        try:
+            # Fetch all notifications from the API
+            notifications = await self.get_notifications()
+
+            # Get selected devices from options
+            selected_devices = config_entry.options.get(
+                "devices_to_notify", [])
+
+            # Filter notifications for selected devices
+            filtered_notifications = [
+                notification
+                for notification in notifications
+                if notification["deviceId"] in selected_devices
+                and not notification.get("isAcknowledged", False)
+            ]
+
+            # Process only filtered notifications
+            await self.process_notifications(filtered_notifications)
+
+            # Acknowledge and remove notifications that are already acknowledged
+            acknowledged_notifications = [
+                notification
+                for notification in notifications
+                if notification.get("isAcknowledged", False)
+            ]
+            for notification in acknowledged_notifications:
+                await self._acknowledge_notification(notification)
+
+            return filtered_notifications
+        except Exception as e:
+            _LOGGER.error("Error fetching notifications: %s", e)
+
+    def _load_translations(self):
+        """Load translations from the translations folder."""
+        lang = self._hass.config.language  # Aktuelle Sprache des Benutzers
+        translation_file = Path(__file__).parent / f"translations/{lang}.json"
+
+        # Fallback zu Englisch, wenn die Sprache nicht verfügbar ist
+        if not translation_file.is_file():
+            translation_file = Path(__file__).parent / "translations/en.json"
+
+        # Übersetzungen laden
+        if translation_file.is_file():
+            with open(translation_file, "r", encoding="utf-8") as file:
+                return json.load(file)
+        return {}
+
+    def _translate(self, category, key):
+        """Retrieve a translation for the given category and key."""
+        return self.translations.get(category, {}).get(key, key)
+
+    def _get_device_name(self, device_registry, device_id):
+        """Get the device name based on the deviceId."""
+        for device in device_registry.devices.values():
+            # Prüfen, ob die Device-Id zu den Identifiers gehört
+            if (DOMAIN, device_id) in device.identifiers:
+                return device.name  # Name des Geräts zurückgeben
+        return None  # Kein Name gefunden
+
+    async def process_notifications(self, notifications):
+        """Process notifications and create Home Assistant notifications."""
+
+        device_registry = async_get_device_registry(self._hass)
+
+        for notification in notifications:
+            device_id = notification["deviceId"]
+            device_name = self._get_device_name(device_registry, device_id)
+
+            raw_created_at = notification.get("createdAt")
+            created_at = None
+            if raw_created_at:
+                dt_obj = parse_datetime(raw_created_at)
+                if dt_obj:
+                    dt_local = as_local(dt_obj)
+                    created_at = dt_local.strftime(
+                        "%x %X"
+                    )  # Lokale Formatierung (Datum und Zeit)
+
+            notification_type = notification.get("notificationType", "unknown")
+            notification_id = f"liebherr_{notification['notificationId']}"
+            translated_notification_type = self._translate(
+                "notificationType", notification_type
+            )
+
+            svg_icon = ""
+            if notification["notificationType"] == "door_alarm":
+                svg_icon = DOOR_ALARM
+            message = f"### {translated_notification_type} ({created_at if created_at else raw_created_at})\n"
+            if svg_icon:
+                message += f"![icon]({svg_icon})\n"
+            self._hass.components.persistent_notification.create(
+                message,
+                title=f"{device_name or device_id}",
+                notification_id=notification_id,
+            )
+            self._add_dismiss_listener(notification_id, notification)
+
+    def _add_dismiss_listener(self, notification_id, notification):
+        """Track when the notification is dismissed."""
+
+        async def dismiss_handler(event):
+            """Handle the dismiss event."""
+            if event.data.get("notification_id") == notification_id:
+                # Sende den Acknowledgment-Request
+                await self._acknowledge_notification(notification)
+                # Entferne den Listener
+                self._hass.bus.async_listen(
+                    "persistent_notification.dismiss", dismiss_handler
+                ).remove()
+
+        # Event-Listener hinzufügen
+        self._hass.bus.async_listen(
+            "persistent_notification.dismiss", dismiss_handler)
+
+    async def _acknowledge_notification(self, notification):
+        """Send acknowledgment to the API."""
+        try:
+            url = f"https://mobile-api.smartdevice.liebherr.com/v1/household/notifications/{notification['deviceId']}/{notification['notificationId']}"
+            await self.api.acknowledge_notification(url)
+        except Exception as e:
+            self._hass.components.persistent_notification.create(
+                message=f"Failed to acknowledge notification: {str(e)}",
+                title="Liebherr Notification Error",
+            )
+
+    async def acknowledge_notification(self, device_id, notification_id):
+        """Acknowledge a notification."""
+        url = f"{BASE_API_URL}/notifications/{device_id}/{notification_id}"
+        headers = {
+            "Authorization": f"Bearer {self._token}",
+            "Content-Type": "application/json",
+        }
+        payload = {"isAcknowledged": True}
+
+        async with self._session.patch(url, headers=headers, json=payload) as response:
+            if response.status == 204:  # Erfolg: Kein Inhalt
+                _LOGGER.info(
+                    "Successfully acknowledged notification %s for device %s",
+                    notification_id,
+                    device_id,
+                )
+                return True
+            _LOGGER.error(
+                "Failed to acknowledge notification %s: %s",
+                notification_id,
+                response.status,
+            )
+            return False
+
 
 class LiebherrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Liebherr Integration."""
@@ -351,7 +567,7 @@ class LiebherrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 await api.authenticate()
                 return self.async_create_entry(
-                    title="Liebherr Integration", data=user_input
+                    title="Liebherr SmartDevice", data=user_input
                 )
             except Exception as e:
                 _LOGGER.error("Authentication failed: %s", e)

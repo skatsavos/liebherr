@@ -1,0 +1,17 @@
+{
+    "title": "Liebherr",
+    "options": {
+        "step": {
+            "init": {
+                "title": "Notifications",
+                "description": "If you want to receive alerts and notifications for your Liebherr devices, please select the devices you want to receive notifications for.",
+                "data": {
+                    "devices_to_notify": "Devices for which you would like to receive notifications:"
+                }
+            }
+        }
+    },
+    "notificationType": {
+        "door_alarm": "Door Alarm"
+    }
+}
