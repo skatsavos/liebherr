@@ -420,16 +420,6 @@ class LiebherrAPI:
 
             # Process only filtered notifications
             await self.process_notifications(filtered_notifications)
-
-            # Acknowledge and remove notifications that are already acknowledged
-            acknowledged_notifications = [
-                notification
-                for notification in notifications
-                if notification.get("isAcknowledged", False)
-            ]
-            for notification in acknowledged_notifications:
-                await self._acknowledge_notification(self, notification)
-
             return filtered_notifications
         except Exception as e:
             _LOGGER.error("Error fetching notifications: %s", e)
@@ -523,7 +513,7 @@ class LiebherrAPI:
             await self.acknowledge_notification(url, notification["notificationId"])
         except Exception as e:
             self._hass.components.persistent_notification.create(
-                message=f"Failed to acknowledge notification: {str(e)}",
+                message=f"Failed to acknowledge notification(2): {str(e)}",
                 title="Liebherr Notification Error",
             )
 
@@ -545,7 +535,7 @@ class LiebherrAPI:
                 )
                 return True
             _LOGGER.error(
-                "Failed to acknowledge notification %s: %s",
+                "Failed to acknowledge notification(1) %s: %s",
                 notification_id,
                 response.status,
             )
