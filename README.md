@@ -36,7 +36,7 @@ This is a custom integration for Home Assistant that allows you to connect and c
 1. In Home Assistant, navigate to **Settings** > **Devices & Services**.
 2. Click **Add Integration**.
 3. Search for "Liebherr" and select it.
-4. Enter your Liebherr SmartDevice API credentials.
+4. Enter your Liebherr SmartDevice API credentials. (The username, i.e. the mail address, and password  you use in the SmartDevice app.)
 5. Complete the setup process.
 
 ## Usage
