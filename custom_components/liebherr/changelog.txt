@@ -2,3 +2,4 @@
 0.0.3: fixed unique_id for multiple climate entities, cleaned up code, added delay for update, fixed endpoint for climate
 0.0.4: Notifications
 0.0.5: fixed some calls
+0.0.6: debug messages added

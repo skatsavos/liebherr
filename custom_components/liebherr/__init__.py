@@ -289,6 +289,7 @@ class LiebherrAPI:
                 return []
 
             data = await response.json()
+            _LOGGER.debug("Fetched appliances: %s", data)
             return [
                 {
                     "deviceId": appliance["deviceId"],
@@ -318,8 +319,10 @@ class LiebherrAPI:
                     response.status,
                 )
                 return []
-
-            return await response.json()
+            data = await response.json()
+            _LOGGER.debug("Fetched controls for device %s: %s",
+                          device_id, data)
+            return data
 
     async def set_temperature(self, endpoint, temperature):
         """Set the temperature for a specific endpoint."""
