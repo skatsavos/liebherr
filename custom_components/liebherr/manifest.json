@@ -1,7 +1,7 @@
 {
     "domain": "liebherr",
     "name": "Liebherr",
-    "version": "0.0.6",
+    "version": "0.0.7",
     "dependencies": [],
     "config_flow": true,
     "iot_class": "cloud_polling",
@@ -13,6 +13,7 @@
     ],
     "supported_features": [
         "climate",
-        "switch"
+        "switch",
+        "select"
     ]
 }

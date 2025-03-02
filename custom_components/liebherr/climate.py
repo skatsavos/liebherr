@@ -40,7 +40,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
                                       control.get("controlType")),
                     )
                     entities.append(
-                        LiebherrClimate(coordinator, api, appliance, control)
+                        LiebherrClimate(coordinator, api, appliance,
+                                        control, control.get("endpoint"))
                     )
 
     async_add_entities(entities)
@@ -49,7 +50,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
 class LiebherrClimate(ClimateEntity):
     """Representation of a Liebherr climate entity."""
 
-    def __init__(self, coordinator, api, appliance, control) -> None:
+    def __init__(self, coordinator, api, appliance, control, endpoint) -> None:
         """Initialize the climate entity."""
         self.coordinator = coordinator
         self.api = api
@@ -57,7 +58,8 @@ class LiebherrClimate(ClimateEntity):
         self._identifier = control.get(
             "identifier", control.get("controlType"))
         self._appliance = appliance
-        self._endpoint = control.get("endpoint", "/zones/0/temperature")
+        self._endpoint = control.get(
+            "endpoint", endpoint)
         self._attr_name = appliance.get("nickname", appliance.get("deviceId"))
         self._attr_unique_id = (
             "liebherr_" + appliance.get("deviceId") + "_" + self._identifier

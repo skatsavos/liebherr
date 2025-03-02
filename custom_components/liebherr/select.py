@@ -1,4 +1,4 @@
-from homeassistant.components.switch import SwitchEntity
+from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 import logging
@@ -11,7 +11,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities
 ):
-    """Set up Liebherr switches from a config entry."""
+    """Set up Liebherr selects from a config entry."""
     api = hass.data[DOMAIN][config_entry.entry_id]["api"]
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
@@ -26,21 +26,21 @@ async def async_setup_entry(
             continue
 
         for control in controls:
-            if control["controlType"] in ("toggle", "icemaker", "bottletimer"):
-                entities.append(LiebherrSwitch(
+            if control["controlType"] == "biofreshplus":
+                entities.append(LiebherrSelect(
                     api, coordinator, appliance, control))
 
     if not entities:
-        _LOGGER.error("No switch entities created")
+        _LOGGER.error("No select entities created")
 
     async_add_entities(entities)
 
 
-class LiebherrSwitch(SwitchEntity):
-    """Representation of a Liebherr switch entity."""
+class LiebherrSelect(SelectEntity):
+    """Representation of a Liebherr select entity."""
 
     def __init__(self, api, coordinator, appliance, control) -> None:
-        """Initialize the switch entity."""
+        """Initialize the select entity."""
         self._api = api
         self._coordinator = coordinator
         self._appliance = appliance
@@ -48,10 +48,11 @@ class LiebherrSwitch(SwitchEntity):
         self._identifier = control.get("identifier", control["controlType"])
         self._attr_name = f"{appliance['nickname']} {self._identifier}"
         self._attr_unique_id = f"{appliance['deviceId']}_{self._identifier}"
+        self._attr_options = control.get("supportedModes", [])
 
     @property
     def device_info(self):
-        """Return device information for the switch."""
+        """Return device information for the select."""
         return {
             "identifiers": {(DOMAIN, self._appliance["deviceId"])},
             "name": self._appliance.get(
@@ -64,11 +65,11 @@ class LiebherrSwitch(SwitchEntity):
         }
 
     @property
-    def is_on(self):
-        """Return true if the switch is on."""
+    def current_option(self):
+        """Return the current selected option."""
         if not self._coordinator.data:
             _LOGGER.error("Coordinator data is empty")
-            return False
+            return None
 
         controls = []
         appliances = self._coordinator.data.get("appliances", [])
@@ -80,51 +81,18 @@ class LiebherrSwitch(SwitchEntity):
                         control.get("identifier", control["controlType"])
                         == self._identifier
                     ):
-                        return control.get("active", False)
-        return False
+                        return control.get("currentMode", None)
+        return None
 
-    @property
-    def available(self):
-        """Return True if the switch is available."""
-        return self._appliance["available"]
+    async def async_select_option(self, option: str):
+        """Change the selected option."""
+        if option not in self._attr_options:
+            _LOGGER.error("Invalid option selected: %s", option)
+            return
 
-    async def async_turn_on(self, **kwargs):
-        """Turn the switch on."""
-        if self._control["controlType"] == "icemaker":
-            await self._api.set_value(
-                self._appliance["deviceId"] + "/" + self._control["endpoint"],
-                {"iceMakerMode": "ON"},
-            )
-        if self._control["controlType"] == "bottletimer":
-            await self._api.set_value(
-                self._appliance["deviceId"] + "/" + self._control["endpoint"],
-                {"bottleTimer": "ON"},
-            )
-        if self._control["controlType"] == "toggle":
-            await self._api.set_active(
-                self._appliance["deviceId"] + "/" +
-                self._control["endpoint"], True
-            )
-        # TODO: autodoor, presentationlight, biofresh, hydrobreeze
-        await asyncio.sleep(5)
-        await self._coordinator.async_request_refresh()
-
-    async def async_turn_off(self, **kwargs):
-        """Turn the switch off."""
-        if self._control["controlType"] == "icemaker":
-            await self._api.set_value(
-                self._appliance["deviceId"] + "/" + self._control["endpoint"],
-                {"iceMakerMode": "OFF"},
-            )
-        if self._control["controlType"] == "bottletimer":
-            await self._api.set_value(
-                self._appliance["deviceId"] + "/" + self._control["endpoint"],
-                {"bottleTimer": "OFF"},
-            )
-        if self._control["controlType"] == "toggle":
-            await self._api.set_active(
-                self._appliance["deviceId"] + "/" +
-                self._control["endpoint"], False
-            )
+        await self._api.set_value(
+            self._appliance["deviceId"] + "/" + self._control["endpoint"],
+            {"biofreshplusMode": option},
+        )
         await asyncio.sleep(5)
         await self._coordinator.async_request_refresh()

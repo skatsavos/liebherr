@@ -9,6 +9,7 @@ from datetime import timedelta
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import ClimateEntityFeature
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.components.select import SelectEntity
 from homeassistant.const import ATTR_TEMPERATURE
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.config_entries import ConfigEntry
@@ -85,7 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         _LOGGER.warning("No initial data retrieved from Liebherr API")
 
     await hass.config_entries.async_forward_entry_setups(
-        config_entry, ["climate", "switch"]
+        config_entry, ["climate", "switch", "select"]
     )
     return True
 
@@ -94,6 +95,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Unload a config entry."""
     await hass.config_entries.async_forward_entry_unload(config_entry, "climate")
     await hass.config_entries.async_forward_entry_unload(config_entry, "switch")
+    await hass.config_entries.async_forward_entry_unload(config_entry, "select")
     hass.data[DOMAIN].pop(config_entry.entry_id)
     return True
 
@@ -298,7 +300,7 @@ class LiebherrAPI:
                     "nickname": appliance.get("nickname", appliance["applianceName"]),
                     "applianceType": appliance["applianceType"],
                     "capabilities": appliance["applianceInformation"]["capabilities"],
-                    "available": appliance["applianceInformation"]["connected"],
+                    "available": appliance["applianceInformation"].get("connected", True),
                     "controls": await self.get_controls(appliance["deviceId"]),
                 }
                 for appliance in data
