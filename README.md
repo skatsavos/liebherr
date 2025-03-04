@@ -2,6 +2,7 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/bhuebschen/liebherr?style=flat-square)](https://github.com/bhuebschen/liebherr/releases)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square)](https://hacs.xyz/)
+![GitHub Latest Pre-Release)](https://img.shields.io/github/v/release/bhuebschen/liebherr?style=flat-square&include_prereleases&label=pre-release)  
 
 This is a custom integration for Home Assistant that allows you to connect and control Liebherr smart devices via the Liebherr SmartDevice API.
 
