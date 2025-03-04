@@ -100,12 +100,17 @@ class LiebherrSwitch(SwitchEntity):
                 self._appliance["deviceId"] + "/" + self._control["endpoint"],
                 {"bottleTimer": "ON"},
             )
+        if self._control["controlType"] == "autodoor":
+            await self._api.set_value(
+                self._appliance["deviceId"] + "/" + self._control["endpoint"],
+                {"bottleTimer": "ON"},
+            )
         if self._control["controlType"] == "toggle":
             await self._api.set_active(
                 self._appliance["deviceId"] + "/" +
                 self._control["endpoint"], True
             )
-        # TODO: autodoor, presentationlight, biofresh, hydrobreeze
+        # TODO: autodoor, presentationlight
         await asyncio.sleep(5)
         await self._coordinator.async_request_refresh()
 

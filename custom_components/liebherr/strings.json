@@ -12,6 +12,12 @@
         }
     },
     "notificationType": {
-        "door_alarm": "Door Alarm"
+        "door_alarm": "Door Alarm",
+        "auto_door_obstacle_alarm": "AutoDoor obstacle detected",
+        "auto_door_overheat_alarm": "AutoDoor engine overheated",
+        "upper_power_failure_alarm": "Power failure",
+        "lower_power_failure_alarm": "Power failure",
+        "upper_temperature_alarm": "Temperature alarm",
+        "lower_temperature_alarm": "Temperature alarm"
     }
 }

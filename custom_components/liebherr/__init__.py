@@ -25,6 +25,11 @@ from .const import (
     REDIRECT_URI,
     TOKEN_URL,
     DOOR_ALARM,
+    AIR_FILTER,
+    TEMPERATURE_ALARM,
+    DOOR_OVERHEAT_ALARM,
+    OBSTACLE_ALARM,
+    POWER_FAILURE_ALARM
 )
 import ssl
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -33,14 +38,31 @@ from homeassistant.helpers.device_registry import async_get as async_get_device_
 from homeassistant.util.dt import as_local, parse_datetime
 import json
 from pathlib import Path
+import aiofiles
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Set up Liebherr devices from a config entry."""
+
     hass.data.setdefault(DOMAIN, {})
     api = LiebherrAPI(hass, config_entry.data)
+    api.translations = await hass.async_add_executor_job(api._load_translations)
+
+    ssl_context = await hass.async_add_executor_job(
+        ssl.create_default_context
+    )
+    # DEBUG
+    # ssl_context.check_hostname = False
+    # ssl_context.verify_mode = ssl.CERT_NONE
+    # api.connector = TCPConnector(ssl=ssl_context)
+    ###
+    api.connector = TCPConnector(ssl=ssl_context)
+
+    api._session = ClientSession(
+        connector=api.connector
+    )
 
     try:
         await api.authenticate()
@@ -86,7 +108,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         _LOGGER.warning("No initial data retrieved from Liebherr API")
 
     await hass.config_entries.async_forward_entry_setups(
-        config_entry, ["climate", "switch", "select"]
+        config_entry, ["climate", "switch", "select", "sensor"]
     )
     return True
 
@@ -96,6 +118,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     await hass.config_entries.async_forward_entry_unload(config_entry, "climate")
     await hass.config_entries.async_forward_entry_unload(config_entry, "switch")
     await hass.config_entries.async_forward_entry_unload(config_entry, "select")
+    await hass.config_entries.async_forward_entry_unload(config_entry, "sensor")
     hass.data[DOMAIN].pop(config_entry.entry_id)
     return True
 
@@ -105,15 +128,8 @@ class LiebherrAPI:
 
     def __init__(self, hass: HomeAssistant, config: dict) -> None:
         """Initialize the Liebherr API."""
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
         self._hass = hass
-        self.connector = TCPConnector(ssl=ssl_context)
-
-        self._session = ClientSession(
-            connector=self.connector
-        )  # async_get_clientsession(hass, ssl_context=ssl_context)
+        self.connector = {}
 
         self._username = config.get("username")
         self._password = config.get("password")
@@ -121,7 +137,7 @@ class LiebherrAPI:
         self._code_verifier = self._generate_code_verifier()
         self._code_challenge = self._generate_code_challenge(
             self._code_verifier)
-        self.translations = self._load_translations()
+        self.translations = {}
 
     def _generate_code_verifier(self):
         """Generate a secure code verifier."""
@@ -429,7 +445,7 @@ class LiebherrAPI:
         except Exception as e:
             _LOGGER.error("Error fetching notifications: %s", e)
 
-    def _load_translations(self):
+    async def _load_translations(self):
         """Load translations from the translations folder."""
         lang = self._hass.config.language  # Aktuelle Sprache des Benutzers
         translation_file = Path(__file__).parent / f"translations/{lang}.json"
@@ -440,8 +456,9 @@ class LiebherrAPI:
 
         # Übersetzungen laden
         if translation_file.is_file():
-            with open(translation_file, "r", encoding="utf-8") as file:
-                return json.load(file)
+            async with aiofiles.open(translation_file, "r", encoding="utf-8") as file:
+                content = await file.read()
+                return json.loads(content)
         return {}
 
     def _translate(self, category, key):
@@ -482,8 +499,20 @@ class LiebherrAPI:
             )
 
             svg_icon = ""
-            if notification["notificationType"] == "door_alarm":
-                svg_icon = DOOR_ALARM
+            match notification["notificationType"]:
+                case "door_alarm":
+                    svg_icon = DOOR_ALARM
+                case "air_filter_reminder":
+                    svg_icon = AIR_FILTER
+                case "upper_temperature_alarm", "lower_temperature_alarm":
+                    svg_icon = TEMPERATURE_ALARM
+                case "auto_door_overheat_alarm":
+                    svg_icon = DOOR_OVERHEAT_ALARM
+                case "auto_door_obstacle_alarm":
+                    svg_icon = OBSTACLE_ALARM
+                case "upper_power_failure_alarm", "lower_power_failure_alarm":
+                    svg_icon = POWER_FAILURE_ALARM
+
             message = f"### {translated_notification_type} ({created_at if created_at else raw_created_at})\n"
             if svg_icon:
                 message += f"![icon]({svg_icon})\n"
