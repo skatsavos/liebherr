@@ -1,7 +1,9 @@
 {
     "domain": "liebherr",
     "name": "Liebherr",
-    "version": "0.0.9",
+    "documentation": "https://github.com/bhuebschen/liebherr",
+    "issue_tracker": "https://github.com/bhuebschen/liebherr/issues",
+    "version": "0.0.8",
     "dependencies": [],
     "config_flow": true,
     "iot_class": "cloud_polling",
