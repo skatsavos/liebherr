@@ -1,9 +1,9 @@
-"""Support for Liebherr mode selections."""
+"""Support for Liebherr autodoor devices."""
 
 import asyncio
 import logging
 
-from homeassistant.components.select import SelectEntity
+from homeassistant.components.cover import CoverEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities
 ):
-    """Set up Liebherr selects from a config entry."""
+    """Set up Liebherr covers from a config entry."""
     api = hass.data[DOMAIN][config_entry.entry_id]["api"]
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
@@ -29,21 +29,22 @@ async def async_setup_entry(
             continue
 
         for control in controls:
-            if control["controlType"] in ("biofreshplus", "hydrobreeze"):
+            if control["controlType"] == "autodoor":
                 entities.extend(
                     [
-                        LiebherrSelect(api, coordinator, appliance, control),
+                        LiebherrCover(api, coordinator, appliance, control),
                     ]
                 )
+                # entities.append(LiebherrCover(api, coordinator, appliance, control))
 
     async_add_entities(entities)
 
 
-class LiebherrSelect(SelectEntity):
-    """Representation of a Liebherr select entity."""
+class LiebherrCover(CoverEntity):
+    """Representation of a Liebherr cover entity."""
 
     def __init__(self, api, coordinator, appliance, control) -> None:
-        """Initialize the select entity."""
+        """Initialize the cover entity."""
         self._api = api
         self._coordinator = coordinator
         self._appliance = appliance
@@ -51,17 +52,12 @@ class LiebherrSelect(SelectEntity):
         self._identifier = control.get("identifier", control["controlType"])
         self._attr_name = f"{appliance['nickname']} {self._identifier}"
         self._attr_unique_id = f"{appliance['deviceId']}_{self._identifier}"
-        self._attr_options = control.get("supportedModes", [])
-        match control.get("identifier", control["controlType"]):
-            case "biofreshplus":
-                self._attr_icon = "mdi:leaf"
-            case "hydrobreeze":
-                self._attr_icon = "mdi:water"
-                self._attr_options = ["OFF", "LOW", "MEDIUM", "HIGH"]
+        self._is_opening = False
+        self._attr_is_closed = not self.is_open
 
     @property
     def device_info(self):
-        """Return device information for the select."""
+        """Return device information for the cover."""
         return {
             "identifiers": {(DOMAIN, self._appliance["deviceId"])},
             "name": self._appliance.get(
@@ -74,11 +70,11 @@ class LiebherrSelect(SelectEntity):
         }
 
     @property
-    def current_option(self):
-        """Return the current selected option."""
+    def is_open(self):
+        """Return true if the cover is open."""
         if not self._coordinator.data:
             _LOGGER.error("Coordinator data is empty")
-            return None
+            return False
 
         controls = []
         appliances = self._coordinator.data.get("appliances", [])
@@ -90,18 +86,31 @@ class LiebherrSelect(SelectEntity):
                         control.get("identifier", control["controlType"])
                         == self._identifier
                     ):
-                        return control.get("currentMode", None)
-        return None
+                        return control.get("active", False)
+        return False
 
-    async def async_select_option(self, option: str):
-        """Change the selected option."""
-        if option not in self._attr_options:
-            _LOGGER.error("Invalid option selected: %s", option)
-            return
+    @property
+    def available(self):
+        """Return True if the cover is available."""
+        return self._appliance["available"]
 
-        await self._api.set_value(
-            self._appliance["deviceId"] + "/" + self._control["endpoint"],
-            {self._control["controlType"] + "Mode": option},
-        )
+    async def async_open_cover(self, **kwargs):
+        """Open the cover."""
+        if self._control["controlType"] == "autodoor":
+            await self._api.set_value(
+                self._appliance["deviceId"] + "/" + self._control["endpoint"],
+                {"autoDoorMode": "OPEN"},
+            )
+        self._is_opening = True
         await asyncio.sleep(5)
+        self._is_opening = False
         await self._coordinator.async_request_refresh()
+
+    @property
+    def is_opening(self):
+        """Return if the cover is opening or not."""
+        return self._is_opening
+
+    async def async_close_cover(self, **kwargs):
+        """Close the cover."""
+        # Closing is automatic, no action needed

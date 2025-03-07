@@ -1,9 +1,13 @@
-from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-import logging
-from .const import DOMAIN
+"""Support for Liebherr mode switches."""
+
 import asyncio
+import logging
+
+from homeassistant.components.switch import SwitchEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,14 +25,17 @@ async def async_setup_entry(
     for appliance in appliances:
         controls = await api.get_controls(appliance["deviceId"])
         if not controls:
-            _LOGGER.warning("No controls found for appliance %s",
-                            appliance["deviceId"])
+            _LOGGER.warning("No controls found for appliance %s", appliance["deviceId"])
             continue
 
         for control in controls:
             if control["controlType"] in ("toggle", "icemaker", "bottletimer"):
-                entities.append(LiebherrSwitch(
-                    api, coordinator, appliance, control))
+                entities.extend(
+                    [
+                        LiebherrSwitch(api, coordinator, appliance, control),
+                    ]
+                )
+                # entities.append(LiebherrSwitch(api, coordinator, appliance, control))
 
     if not entities:
         _LOGGER.error("No switch entities created")
@@ -48,6 +55,21 @@ class LiebherrSwitch(SwitchEntity):
         self._identifier = control.get("identifier", control["controlType"])
         self._attr_name = f"{appliance['nickname']} {self._identifier}"
         self._attr_unique_id = f"{appliance['deviceId']}_{self._identifier}"
+        match control.get("identifier", control["controlType"]):
+            case "SUPERCOOL":
+                self._attr_icon = "mdi:snowflake"
+            case "SUPERFROST":
+                self._attr_icon = "mdi:snowflake-variant"
+            case "PARTYMODE":
+                self._attr_icon = "mdi:party-popper"
+            case "HOLIDAYMODE":
+                self._attr_icon = "mdi:beach"
+            case "NIGHTMODE":
+                self._attr_icon = "mdi:weather-night"
+            case "BOTTLETIMER":
+                self._attr_icon = "mdi:timer-sand"
+            case "icemaker":
+                self._attr_icon = "mdi:ice-cream"
 
     @property
     def device_info(self):
@@ -107,10 +129,9 @@ class LiebherrSwitch(SwitchEntity):
             )
         if self._control["controlType"] == "toggle":
             await self._api.set_active(
-                self._appliance["deviceId"] + "/" +
-                self._control["endpoint"], True
+                self._appliance["deviceId"] + "/" + self._control["endpoint"], True
             )
-        # TODO: autodoor, presentationlight
+        # TODO: presentationlight
         await asyncio.sleep(5)
         await self._coordinator.async_request_refresh()
 
@@ -128,8 +149,7 @@ class LiebherrSwitch(SwitchEntity):
             )
         if self._control["controlType"] == "toggle":
             await self._api.set_active(
-                self._appliance["deviceId"] + "/" +
-                self._control["endpoint"], False
+                self._appliance["deviceId"] + "/" + self._control["endpoint"], False
             )
         await asyncio.sleep(5)
         await self._coordinator.async_request_refresh()

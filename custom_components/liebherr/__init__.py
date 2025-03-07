@@ -1,46 +1,45 @@
-import logging
-import secrets
-import hashlib
+"""Liebherr SmartDevice for HomeAssistant."""
+
 import base64
-import re
-import voluptuous as vol
-from urllib.parse import parse_qs
 from datetime import timedelta
-from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import ClimateEntityFeature
-from homeassistant.components.switch import SwitchEntity
-from homeassistant.components.select import SelectEntity
-from homeassistant.const import ATTR_TEMPERATURE
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+import hashlib
+import json
+import logging
+from pathlib import Path
+import re
+import secrets
+import ssl
+from urllib.parse import parse_qs
+
+import aiofiles
+from aiohttp import ClientSession, TCPConnector
+import voluptuous as vol
+
+from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant import config_entries
-from homeassistant.core import callback
+import homeassistant.helpers.device_registry as dr
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util.dt import as_local, parse_datetime
+
+# from homeassistant.core import __all__
 from .const import (
-    DOMAIN,
-    BASE_URL,
-    BASE_API_URL,
-    CLIENT_ID,
-    REDIRECT_URI,
-    TOKEN_URL,
-    DOOR_ALARM,
     AIR_FILTER,
-    TEMPERATURE_ALARM,
+    BASE_API_URL,
+    BASE_URL,
+    CLIENT_ID,
+    DOMAIN,
+    DOOR_ALARM,
     DOOR_OVERHEAT_ALARM,
     OBSTACLE_ALARM,
-    POWER_FAILURE_ALARM
+    POWER_FAILURE_ALARM,
+    REDIRECT_URI,
+    TEMPERATURE_ALARM,
+    TOKEN_URL,
 )
-import ssl
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from aiohttp import ClientSession, TCPConnector
-from homeassistant.helpers.device_registry import async_get as async_get_device_registry
-from homeassistant.util.dt import as_local, parse_datetime
-import json
-from pathlib import Path
-import aiofiles
 
 _LOGGER = logging.getLogger(__name__)
+_DEBUG = False
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
@@ -48,11 +47,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 
     hass.data.setdefault(DOMAIN, {})
     api = LiebherrAPI(hass, config_entry.data)
-    api.translations = await hass.async_add_executor_job(api._load_translations)
+    api.translations = await api.load_translations()
 
-    ssl_context = await hass.async_add_executor_job(
-        ssl.create_default_context
-    )
+    ssl_context = await hass.async_add_executor_job(ssl.create_default_context)
     # DEBUG
     # ssl_context.check_hostname = False
     # ssl_context.verify_mode = ssl.CERT_NONE
@@ -60,13 +57,11 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     ###
     api.connector = TCPConnector(ssl=ssl_context)
 
-    api._session = ClientSession(
-        connector=api.connector
-    )
+    api.session = ClientSession(connector=api.connector)
 
     try:
         await api.authenticate()
-    except Exception as e:
+    except LiebherrAuthException as e:
         _LOGGER.error("Failed to authenticate: %s", e)
         return False
 
@@ -80,12 +75,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
             filtered_notifications = await api.fetch_notifications(config_entry)
 
             # Kombinierte Daten zurückgeben
-            return {
+            combined_data = {
                 "appliances": appliances,
                 "notifications": filtered_notifications,
             }
-        except Exception as e:
-            raise Exception(f"Error updating Liebherr data: {e}")
+        except LiebherrUpdateException as e:
+            raise LiebherrUpdateException(f"Error updating Liebherr data: {e}") from e
+        else:
+            return combined_data
 
     coordinator = DataUpdateCoordinator(
         hass,
@@ -108,7 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         _LOGGER.warning("No initial data retrieved from Liebherr API")
 
     await hass.config_entries.async_forward_entry_setups(
-        config_entry, ["climate", "switch", "select", "sensor"]
+        config_entry, ["climate", "switch", "select", "sensor", "cover"]
     )
     return True
 
@@ -119,8 +116,33 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     await hass.config_entries.async_forward_entry_unload(config_entry, "switch")
     await hass.config_entries.async_forward_entry_unload(config_entry, "select")
     await hass.config_entries.async_forward_entry_unload(config_entry, "sensor")
+    await hass.config_entries.async_forward_entry_unload(config_entry, "cover")
     hass.data[DOMAIN].pop(config_entry.entry_id)
     return True
+
+
+class LiebherrAuthException(Exception):
+    """Exception raised for authentication errors in the Liebherr API."""
+
+
+class LiebherrUpdateException(Exception):
+    """Exception raised for update methodes in the Liebherr API."""
+
+
+class LiebherrFetchException(Exception):
+    """Exception raised for fetching data in the Liebherr API."""
+
+
+class LiebherrException(Exception):
+    """Exception raised for errors in the Liebherr API."""
+
+    def __init__(self, message) -> None:
+        """Initialize the exception."""
+        self.message = message
+
+    def __str__(self):
+        """Return the exception message."""
+        return self.message
 
 
 class LiebherrAPI:
@@ -130,13 +152,12 @@ class LiebherrAPI:
         """Initialize the Liebherr API."""
         self._hass = hass
         self.connector = {}
-
+        self.session = {}
         self._username = config.get("username")
         self._password = config.get("password")
         self._token = None
         self._code_verifier = self._generate_code_verifier()
-        self._code_challenge = self._generate_code_challenge(
-            self._code_verifier)
+        self._code_challenge = self._generate_code_challenge(self._code_verifier)
         self.translations = {}
 
     def _generate_code_verifier(self):
@@ -176,16 +197,18 @@ class LiebherrAPI:
             f"state=session_state&code_challenge_method=S256&code_challenge={code_challenge}"
         )
 
-        async with self._session.get(auth_url) as response:
+        async with self.session.get(auth_url) as response:
             if response.status != 200:
                 _LOGGER.error(
                     "Failed to retrieve the initial authentication page: %s",
                     response.status,
                 )
-                raise Exception(
-                    "Failed to retrieve initial authentication page.")
+                raise LiebherrAuthException(
+                    "Failed to retrieve initial authentication page."
+                )
 
             html = await response.text()
+            _LOGGER.debug("STEP1: auth_url content: %s", html)
             verification_token = self._extract_verification_token(html)
             ncforminfo = self._extract_ncforminfo(html)
 
@@ -197,42 +220,41 @@ class LiebherrAPI:
             "__ncforminfo": ncforminfo,
         }
 
-        async with self._session.post(
+        async with self.session.post(
             login_url, headers=headers, data=login_data, allow_redirects=False
         ) as response:
+            _LOGGER.debug("STEP2: login_url content: %s", login_url)
             if response.status not in (302, 200):
-                _LOGGER.error(
-                    "Login failed with status code: %s", response.status)
-                raise Exception("Failed to log in to Liebherr API")
+                _LOGGER.error("Login failed with status code: %s", response.headers)
+                raise LiebherrAuthException("Failed to log in to Liebherr API")
 
             redirect_location = response.headers.get("Location")
             if not redirect_location:
-                _LOGGER.error(
-                    "Failed to extract redirect URL from login response")
-                raise Exception("Missing redirect URL after login")
+                _LOGGER.error("Failed to extract redirect URL from login response")
+                raise LiebherrAuthException("Missing redirect URL after login")
 
         # Step 3: Retrieve authorization code
-        async with self._session.get(callback_url, allow_redirects=False) as response:
+        async with self.session.get(callback_url, allow_redirects=False) as response:
+            _LOGGER.debug("STEP3: callback_url content: %s", response.headers)
             if response.status not in (302, 0):
                 _LOGGER.error(
                     "Failed to retrieve authorization code: %s", response.status
                 )
-                raise Exception("Failed to retrieve authorization code")
+                raise LiebherrAuthException("Failed to retrieve authorization code")
 
             location_header = response.headers.get("Location")
             if not location_header:
                 _LOGGER.error("Missing Location header in response")
-                raise Exception(
-                    "Missing Location header for authorization code")
+                raise LiebherrAuthException(
+                    "Missing Location header for authorization code"
+                )
 
-            query_params = self._parse_query_params(
-                location_header.split("?")[-1])
+            query_params = self._parse_query_params(location_header.split("?")[-1])
             authorization_code = query_params.get("code", [None])[0]
 
             if not authorization_code:
-                _LOGGER.error(
-                    "Authorization code not found in redirect response")
-                raise Exception("Missing authorization code")
+                _LOGGER.error("Authorization code not found in redirect response")
+                raise LiebherrAuthException("Missing authorization code")
 
         # Step 4: Exchange authorization code for access token
         token_data = {
@@ -243,23 +265,24 @@ class LiebherrAPI:
             "code_verifier": code_verifier,
         }
 
-        async with self._session.post(
+        async with self.session.post(
             TOKEN_URL, headers=headers, data=token_data
         ) as response:
+            _LOGGER.debug("STEP4: TOKEN_URL content: %s", TOKEN_URL)
             if response.status != 200:
                 _LOGGER.error(
                     "Token exchange failed with status code: %s", response.status
                 )
-                raise Exception(
-                    "Failed to exchange authorization code for token")
+                raise LiebherrAuthException(
+                    "Failed to exchange authorization code for token"
+                )
 
             token_response = await response.json()
             self._token = token_response.get("access_token")
 
             if not self._token:
-                _LOGGER.error(
-                    "Failed to retrieve access token: %s", token_response)
-                raise Exception("Missing access token in token response")
+                _LOGGER.error("Failed to retrieve access token: %s", token_response)
+                raise LiebherrAuthException("Missing access token in token response")
 
     def _extract_verification_token(self, html):
         """Extract the RequestVerificationToken from the HTML page."""
@@ -269,7 +292,7 @@ class LiebherrAPI:
         )
         if not match:
             _LOGGER.error("HTML content: %s", html)
-            raise Exception("Verification token not found in HTML")
+            raise LiebherrAuthException("Verification token not found in HTML")
         return match.group(1)
 
     def _extract_ncforminfo(self, html):
@@ -280,7 +303,7 @@ class LiebherrAPI:
         )
         if not match:
             _LOGGER.error("HTML content: %s", html)
-            raise Exception("ncforminfo not found in HTML")
+            raise LiebherrAuthException("ncforminfo not found in HTML")
         return match.group(1)
 
     def _parse_query_params(self, query):
@@ -298,10 +321,62 @@ class LiebherrAPI:
         headers = {
             "Authorization": f"Bearer {self._token}",
         }
-        async with self._session.get(BASE_API_URL, headers=headers) as response:
+        if _DEBUG:
+            data = [
+                {
+                    "deviceId": "38.258.275.0",
+                    "nickname": "SUPERCOOLER-DEVICE",
+                    "applianceType": "FREEZER",
+                    "imageUrl": "https://stdprodsmartdevicepub.blob.core.windows.net/public/productimages/128b2adc-ae3e-45a3-b0a6-bb45b7a0599d.png",
+                    "applianceName": "SIFNei 5188-20 001",
+                    "onboardingState": "ONBOARDED",
+                    "applianceInformation": {
+                        "modelType": "EIGER",
+                        "displayPosition": "BEHIND_DOOR",
+                        "connectivitySolutionType": "INTEGRATED",
+                        "guaranteeState": "NOT_ELIGIBLE",
+                        "capabilities": [
+                            "PARTY_MODE",
+                            "BOTTLE_TIMER",
+                            "ICE_MAKER",
+                            "SUPER_FROST",
+                            "NIGHT_MODE",
+                            "HOLIDAY_MODE",
+                            "PARTY_MODE",
+                            "AIR_FILTER",
+                            "BIO_FRESH",
+                            "BIO_FRESH_PLUS",
+                            "HYDRO_BREEZE",
+                            "SUPER_COOL",
+                            "SUPER_FROST",
+                            "DOOR_ALARM",
+                            "POWER_FAILURE_ALARM",
+                            "TEMPERATURE_ALARM",
+                        ],
+                        "connected": True,
+                        "displayDesignId": "ADVANCED",
+                    },
+                }
+            ]
+            return [
+                {
+                    "deviceId": appliance["deviceId"],
+                    "model": appliance["applianceName"],
+                    "image": appliance["imageUrl"],
+                    "nickname": appliance.get("nickname", appliance["applianceName"]),
+                    "applianceType": appliance["applianceType"],
+                    "capabilities": appliance["applianceInformation"]["capabilities"],
+                    "available": appliance["applianceInformation"].get(
+                        "connected", True
+                    ),
+                    "controls": await self.get_controls(appliance["deviceId"]),
+                }
+                for appliance in data
+            ]
+
+        async with self.session.get(BASE_API_URL, headers=headers) as response:
             if response.status != 200:
-                _LOGGER.error("Failed to fetch appliances: %s",
-                              response.status)
+                _LOGGER.error("Failed to fetch appliances: %s", response.status)
                 if response.status == 401:
                     await self.authenticate()
                 return []
@@ -316,7 +391,9 @@ class LiebherrAPI:
                     "nickname": appliance.get("nickname", appliance["applianceName"]),
                     "applianceType": appliance["applianceType"],
                     "capabilities": appliance["applianceInformation"]["capabilities"],
-                    "available": appliance["applianceInformation"].get("connected", True),
+                    "available": appliance["applianceInformation"].get(
+                        "connected", True
+                    ),
                     "controls": await self.get_controls(appliance["deviceId"]),
                 }
                 for appliance in data
@@ -329,7 +406,121 @@ class LiebherrAPI:
             "Authorization": f"Bearer {self._token}",
         }
 
-        async with self._session.get(url, headers=headers) as response:
+        if _DEBUG:
+            return [
+                {
+                    "controlType": "temperature",
+                    "endpoint": "zones/0/temperature",
+                    "affectedBy": [],
+                    "current": 5,
+                    "target": 5,
+                    "min": 3,
+                    "max": 9,
+                    "temperatureUnit": "CELSIUS",
+                    "identifier": "COOLING",
+                },
+                {
+                    "controlType": "temperature",
+                    "endpoint": "zones/1/temperature",
+                    "affectedBy": [],
+                    "current": 5,
+                    "target": 5,
+                    "min": 3,
+                    "max": 9,
+                    "temperatureUnit": "CELSIUS",
+                    "identifier": "FREEZING",
+                },
+                {
+                    "controlType": "temperature",
+                    "endpoint": "zones/2/temperature",
+                    "affectedBy": [],
+                    "current": 55,
+                    "target": 55,
+                    "min": 53,
+                    "max": 59,
+                    "temperatureUnit": "CELSIUS",
+                    "identifier": "HEATING",
+                },
+                {
+                    "controlType": "biofresh",
+                    "affectedBy": [],
+                    "current": 0,
+                    "temperatureUnit": "CELSIUS",
+                },
+                {
+                    "controlType": "icemaker",
+                    "endpoint": "zones/0/icemaker",
+                    "affectedBy": [],
+                    "currentMode": "ON",
+                    "tileMode": "ON",
+                    "hasMaxIce": True,
+                },
+                {
+                    "controlType": "biofreshplus",
+                    "endpoint": "zones/0/biofreshplus",
+                    "affectedBy": [],
+                    "current": 0,
+                    "temperatureUnit": "CELSIUS",
+                    "currentMode": "ZERO_ZERO",
+                    "supportedModes": [
+                        "MINUS_TWO_MINUS_TWO",
+                        "ZERO_ZERO",
+                        "MINUS_TWO_ZERO",
+                    ],
+                },
+                {
+                    "controlType": "toggle",
+                    "endpoint": "zones/0/supercool",
+                    "affectedBy": [],
+                    "identifier": "SUPERCOOL",
+                    "active": False,
+                },
+                {
+                    "controlType": "toggle",
+                    "endpoint": "zones/1/superfrost",
+                    "affectedBy": [],
+                    "identifier": "SUPERFROST",
+                    "active": False,
+                },
+                {
+                    "controlType": "hydrobreeze",
+                    "endpoint": "zones/0/hydrobreeze",
+                    "affectedBy": [],
+                    "currentMode": "MEDIUM",
+                },
+                {
+                    "controlType": "autodoor",
+                    "endpoint": "zones/0/autodoor/trigger",
+                    "affectedBy": [],
+                    "doorState": "CLOSED",
+                    "enabled": True,
+                    "calibrated": True,
+                },
+                {
+                    "controlType": "toggle",
+                    "endpoint": "partymode",
+                    "affectedBy": [],
+                    "identifier": "PARTYMODE",
+                    "active": False,
+                },
+                {
+                    "controlType": "toggle",
+                    "endpoint": "nightmode",
+                    "affectedBy": [],
+                    "identifier": "NIGHTMODE",
+                    "active": False,
+                },
+                {
+                    "controlType": "toggle",
+                    "endpoint": "holidaymode",
+                    "affectedBy": [],
+                    "identifier": "HOLIDAYMODE",
+                    "temperatureUnit": "CELSIUS",
+                    "active": False,
+                },
+            ]
+
+        async with self.session.get(url, headers=headers) as response:
             if response.status != 200:
                 _LOGGER.error(
                     "Failed to fetch controls for device %s: %s",
@@ -337,9 +528,11 @@ class LiebherrAPI:
                     response.status,
                 )
                 return []
+            if response.status == 401:
+                await self.authenticate()
+                return []
             data = await response.json()
-            _LOGGER.debug("Fetched controls for device %s: %s",
-                          device_id, data)
+            _LOGGER.debug("Fetched controls for device %s: %s", device_id, data)
             return data
 
     async def set_temperature(self, endpoint, temperature):
@@ -351,7 +544,7 @@ class LiebherrAPI:
         }
         payload = {"value": temperature}
 
-        async with self._session.put(url, headers=headers, json=payload) as response:
+        async with self.session.put(url, headers=headers, json=payload) as response:
             if response.status != 204:
                 _LOGGER.error("Failed to set temperature: %s", response.status)
 
@@ -364,7 +557,7 @@ class LiebherrAPI:
         }
         payload = {"active": value}
 
-        async with self._session.put(url, headers=headers, json=payload) as response:
+        async with self.session.put(url, headers=headers, json=payload) as response:
             if response.status != 200:
                 _LOGGER.error("Failed to set control: %s", response.status)
 
@@ -377,10 +570,10 @@ class LiebherrAPI:
         }
         payload = value
 
-        async with self._session.put(url, headers=headers, json=payload) as response:
+        async with self.session.put(url, headers=headers, json=payload) as response:
             if response.status != 204:
                 _LOGGER.error("Failed to set control: %s", response.status)
-        self.get_appliances()
+        await self.get_appliances()
 
     async def set_active(self, endpoint, active):
         """Activate or deactivate a control."""
@@ -391,10 +584,10 @@ class LiebherrAPI:
         }
         payload = {"active": active}
 
-        async with self._session.put(url, headers=headers, json=payload) as response:
+        async with self.session.put(url, headers=headers, json=payload) as response:
             if response.status != 204:
                 _LOGGER.error("Failed to set control: %s", response.status)
-        self.get_appliances()
+        await self.get_appliances()
 
     async def get_notifications(self):
         """Retrieve notifications from the Liebherr API."""
@@ -405,7 +598,7 @@ class LiebherrAPI:
         }
 
         try:
-            async with self._session.get(url, headers=headers) as response:
+            async with self.session.get(url, headers=headers) as response:
                 _LOGGER.debug("Fetching notifications: %s", response.status)
                 if response.status == 200:
                     # Parse JSON response
@@ -416,8 +609,11 @@ class LiebherrAPI:
                     response.status,
                     await response.text(),
                 )
+                if response.status == 401:
+                    await self.authenticate()
+
                 return []
-        except Exception as e:
+        except LiebherrFetchException as e:
             _LOGGER.error("Error fetching notifications: %s", e)
             return []
 
@@ -428,8 +624,7 @@ class LiebherrAPI:
             notifications = await self.get_notifications()
 
             # Get selected devices from options
-            selected_devices = config_entry.options.get(
-                "devices_to_notify", [])
+            selected_devices = config_entry.options.get("devices_to_notify", [])
 
             # Filter notifications for selected devices
             filtered_notifications = [
@@ -441,11 +636,12 @@ class LiebherrAPI:
 
             # Process only filtered notifications
             await self.process_notifications(filtered_notifications)
-            return filtered_notifications
-        except Exception as e:
+        except LiebherrFetchException as e:
             _LOGGER.error("Error fetching notifications: %s", e)
+        else:
+            return filtered_notifications
 
-    async def _load_translations(self):
+    async def load_translations(self):
         """Load translations from the translations folder."""
         lang = self._hass.config.language  # Aktuelle Sprache des Benutzers
         translation_file = Path(__file__).parent / f"translations/{lang}.json"
@@ -456,7 +652,7 @@ class LiebherrAPI:
 
         # Übersetzungen laden
         if translation_file.is_file():
-            async with aiofiles.open(translation_file, "r", encoding="utf-8") as file:
+            async with aiofiles.open(translation_file, encoding="utf-8") as file:
                 content = await file.read()
                 return json.loads(content)
         return {}
@@ -476,7 +672,7 @@ class LiebherrAPI:
     async def process_notifications(self, notifications):
         """Process notifications and create Home Assistant notifications."""
 
-        device_registry = async_get_device_registry(self._hass)
+        device_registry = dr.async_get(self._hass)
 
         for notification in notifications:
             device_id = notification["deviceId"]
@@ -537,17 +733,16 @@ class LiebherrAPI:
                 ).remove()
 
         # Event-Listener hinzufügen
-        self._hass.bus.async_listen(
-            "persistent_notification.dismiss", dismiss_handler)
+        self._hass.bus.async_listen("persistent_notification.dismiss", dismiss_handler)
 
     async def _acknowledge_notification(self, notification):
         """Send acknowledgment to the API."""
         try:
             url = f"https://mobile-api.smartdevice.liebherr.com/v1/household/notifications/{notification['deviceId']}/{notification['notificationId']}"
             await self.acknowledge_notification(url, notification["notificationId"])
-        except Exception as e:
+        except LiebherrException as e:
             self._hass.components.persistent_notification.create(
-                message=f"Failed to acknowledge notification(2): {str(e)}",
+                message=f"Failed to acknowledge notification(2): {e}",
                 title="Liebherr Notification Error",
             )
 
@@ -560,7 +755,7 @@ class LiebherrAPI:
         }
         payload = {"isAcknowledged": True}
 
-        async with self._session.patch(url, headers=headers, json=payload) as response:
+        async with self.session.patch(url, headers=headers, json=payload) as response:
             if response.status == 204:  # Erfolg: Kein Inhalt
                 _LOGGER.info(
                     "Successfully acknowledged notification %s for device %s",
@@ -593,7 +788,7 @@ class LiebherrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(
                     title="Liebherr SmartDevice", data=user_input
                 )
-            except Exception as e:
+            except LiebherrAuthException as e:
                 _LOGGER.error("Authentication failed: %s", e)
                 errors["base"] = "auth_failed"
 

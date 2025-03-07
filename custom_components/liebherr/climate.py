@@ -1,11 +1,17 @@
-from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import HVACMode
-from homeassistant.components.climate.const import ClimateEntityFeature
+"""Support for Liebherr appliances as climate devices."""
+
+import asyncio
+import logging
+
+from homeassistant.components.climate import (
+    ClimateEntity,
+    ClimateEntityFeature,
+    HVACMode,
+)
 from homeassistant.const import ATTR_TEMPERATURE
 from homeassistant.core import HomeAssistant
-import logging
+
 from .const import DOMAIN
-import asyncio
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,8 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
     for appliance in appliances:
         controls = await api.get_controls(appliance["deviceId"])
         if not controls:
-            _LOGGER.warning("No controls found for appliance %s",
-                            appliance["deviceId"])
+            _LOGGER.warning("No controls found for appliance %s", appliance["deviceId"])
             continue
 
         if appliance["applianceType"] in [
@@ -36,12 +41,16 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
                         "Adding climate entity for %s",
                         appliance.get("deviceId")
                         + "_"
-                        + control.get("identifier",
-                                      control.get("controlType")),
+                        + control.get("identifier", control.get("controlType")),
                     )
                     entities.append(
-                        LiebherrClimate(coordinator, api, appliance,
-                                        control, control.get("endpoint"))
+                        LiebherrClimate(
+                            coordinator,
+                            api,
+                            appliance,
+                            control,
+                            control.get("endpoint"),
+                        )
                     )
 
     async_add_entities(entities)
@@ -55,12 +64,10 @@ class LiebherrClimate(ClimateEntity):
         self.coordinator = coordinator
         self.api = api
         self._control = control
-        self._identifier = control.get(
-            "identifier", control.get("controlType"))
+        self._identifier = control.get("identifier", control.get("controlType"))
         self._appliance = appliance
-        self._endpoint = control.get(
-            "endpoint", endpoint)
-        self._attr_name = appliance.get("nickname", appliance.get("deviceId"))
+        self._endpoint = control.get("endpoint", endpoint)
+        self._attr_name = control.get("identifier")
         self._attr_unique_id = (
             "liebherr_" + appliance.get("deviceId") + "_" + self._identifier
         )

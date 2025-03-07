@@ -4,3 +4,4 @@
 0.0.5: fixed some calls
 0.0.7: debug messages added
 0.0.8: sensors (hydrobreeze, biofresh and autodoor) added, more notification types supported
+0.0.9: code cleanup and more features supported

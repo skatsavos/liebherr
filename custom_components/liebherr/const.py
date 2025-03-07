@@ -1,3 +1,5 @@
+"""Constants for the Liebherr integration."""
+
 DOMAIN = "liebherr"
 BASE_URL = "https://mobile-api.smartdevice.liebherr.com/v1/household"
 BASE_API_URL = f"{BASE_URL}/appliances"

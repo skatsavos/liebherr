@@ -1,8 +1,11 @@
+"""Config flow for Liebherr Integration."""
+
+import voluptuous as vol
+
 from homeassistant import config_entries
 from homeassistant.core import callback
-from homeassistant.helpers.device_registry import async_get as async_get_device_registry
-import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
+import homeassistant.helpers.device_registry as dr
 
 from .const import DOMAIN
 
@@ -43,7 +46,8 @@ class LiebherrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class LiebherrOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Liebherr Integration."""
 
-    def __init__(self, config_entry):
+    def __init__(self, config_entry) -> None:
+        """Initialize the options flow."""
         self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
@@ -53,7 +57,7 @@ class LiebherrOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         # Dynamically create the multi-select options schema based on devices
-        device_registry = async_get_device_registry(self.hass)
+        device_registry = dr.async_get(self.hass)
         devices = [
             device
             for device in device_registry.devices.values()
