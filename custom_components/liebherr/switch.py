@@ -25,7 +25,8 @@ async def async_setup_entry(
     for appliance in appliances:
         controls = await api.get_controls(appliance["deviceId"])
         if not controls:
-            _LOGGER.warning("No controls found for appliance %s", appliance["deviceId"])
+            _LOGGER.warning("No controls found for appliance %s",
+                            appliance["deviceId"])
             continue
 
         for control in controls:
@@ -35,7 +36,8 @@ async def async_setup_entry(
                 entities.extend(
                     [
                         LiebherrSwitch(
-                            api, coordinator, appliance, control, control.get("zoneId")
+                            api, coordinator, appliance, control, control.get(
+                                "zoneId")
                         ),
                     ]
                 )
@@ -57,7 +59,8 @@ class LiebherrSwitch(SwitchEntity):
         self._control = control
         self._zoneId = control.get("zoneId", zoneId)
         self._identifier = (
-            appliance.get("nickname") + "_" + control.get("name", control.get("type"))
+            appliance.get("nickname") + "_" +
+            control.get("name", control.get("type"))
         )
         if "zonePosition" in control:
             self._identifier += f"_{control['zonePosition']}"
@@ -116,8 +119,31 @@ class LiebherrSwitch(SwitchEntity):
                 for control in controls:
                     if self._control_name == control.get("name"):
                         if self._zoneId == control.get("zoneId"):
-                            return control.get("active", False)
+                            _LOGGER.debug(control)
+                            return control.get("value", False)
         return False
+
+    def setControlValue(self, value):
+        """Change controls value."""
+        appliances = self._coordinator.data.get("appliances", [])
+        device = next(
+            (d for d in appliances if d.get("deviceId")
+             == self._appliance["deviceId"]),
+            None,
+        )
+
+        if device:
+            control = next(
+                (
+                    c
+                    for c in device.get("controls", [])
+                    if self._control_name == c.get("name")
+                    and self._zoneId == c.get("zoneId")
+                ),
+                None,
+            )
+            if control:
+                control["value"] = value
 
     @property
     def available(self):
@@ -152,8 +178,7 @@ class LiebherrSwitch(SwitchEntity):
             await self._api.set_value(
                 self._appliance["deviceId"], self._control["name"], data
             )
-        await asyncio.sleep(5)
-        await self._coordinator.async_request_refresh()
+            self.setControlValue(True)
 
     async def async_turn_off(self, **kwargs):
         """Turn the switch off."""
@@ -169,7 +194,7 @@ class LiebherrSwitch(SwitchEntity):
             )
         if self._control["type"] == "ToggleControl":
             if self._control.get("zoneId", None) is None:
-                data = BaseToggleControlRequest(value=True)
+                data = BaseToggleControlRequest(value=False)
             else:
                 data = ZoneToggleControlRequest(
                     zoneId=self._control.get("zoneId"), value=False
@@ -178,5 +203,4 @@ class LiebherrSwitch(SwitchEntity):
             await self._api.set_value(
                 self._appliance["deviceId"], self._control["name"], data
             )
-        await asyncio.sleep(5)
-        await self._coordinator.async_request_refresh()
+            self.setControlValue(False)

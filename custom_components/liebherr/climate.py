@@ -27,7 +27,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
     for appliance in appliances:
         controls = await api.get_controls(appliance["deviceId"])
         if not controls:
-            _LOGGER.warning("No controls found for appliance %s", appliance["deviceId"])
+            _LOGGER.warning("No controls found for appliance %s",
+                            appliance["deviceId"])
             continue
 
         if appliance["applianceType"] in [

@@ -52,14 +52,17 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
 
     api.session = ClientSession(connector=api.connector)
 
-    async def async_update_method():
+    async def async_update_method() -> None:
         """Fetch both appliances and notifications."""
+
+        _LOGGER.debug("async_update_method called")
         try:
             # Geräte abrufen
             appliances = await api.get_appliances()
 
             # Benachrichtigungen abrufen
-            filtered_notifications = []  # await api.fetch_notifications(config_entry)
+            # await api.fetch_notifications(config_entry)
+            filtered_notifications = []
 
             # Kombinierte Daten zurückgeben
             combined_data = {
@@ -67,7 +70,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
                 "notifications": filtered_notifications,
             }
         except LiebherrUpdateException as e:
-            raise LiebherrUpdateException(f"Error updating Liebherr data: {e}") from e
+            raise LiebherrUpdateException(
+                f"Error updating Liebherr data: {e}") from e
         else:
             return combined_data
 
@@ -76,9 +80,11 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
         _LOGGER,
         name="Liebherr devices",
         update_method=async_update_method,
-        update_interval=timedelta(
-            seconds=config_entry.options.get("update_interval", 6)
-        ),
+        update_interval=timedelta(seconds=10),
+    )
+    _LOGGER.debug(
+        "[LIEBHERR] Effective update interval: %s seconds",
+        coordinator.update_interval.total_seconds(),
     )
 
     hass.data[DOMAIN][config_entry.entry_id] = {
@@ -149,11 +155,11 @@ class LiebherrAPI:
         headers = {
             "api-key": self._key,
         }
-        _LOGGER.debug(headers)
-        _LOGGER.debug(BASE_API_URL)
+
         async with self.session.get(BASE_API_URL, headers=headers) as response:
             if response.status != 200:
-                _LOGGER.error("Failed to fetch appliances: %s", response.status)
+                _LOGGER.error("Failed to fetch appliances: %s",
+                              response.status)
                 return []
 
             data = await response.json()
@@ -193,7 +199,8 @@ class LiebherrAPI:
                 _LOGGER.error("API-KEY provided is not valid")
                 return []
             data = await response.json()
-            _LOGGER.debug("Fetched controls for device %s: %s", device_id, data)
+            _LOGGER.debug("Fetched controls for device %s: %s",
+                          device_id, data)
             return data
 
     async def set_value(self, deviceId, control, value):
@@ -244,7 +251,8 @@ class LiebherrAPI:
             notifications = await self.get_notifications()
 
             # Get selected devices from options
-            selected_devices = config_entry.options.get("devices_to_notify", [])
+            selected_devices = config_entry.options.get(
+                "devices_to_notify", [])
 
             # Filter notifications for selected devices
             filtered_notifications = [
@@ -350,7 +358,8 @@ class LiebherrAPI:
                     "persistent_notification.dismiss", dismiss_handler
                 ).remove()
 
-        self._hass.bus.async_listen("persistent_notification.dismiss", dismiss_handler)
+        self._hass.bus.async_listen(
+            "persistent_notification.dismiss", dismiss_handler)
 
     async def _acknowledge_notification(self, notification):
         """Send acknowledgment to the API."""
