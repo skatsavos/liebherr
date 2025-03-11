@@ -29,7 +29,7 @@ async def async_setup_entry(
             continue
 
         for control in controls:
-            if control["controlType"] == "autodoor":
+            if control["type"] == "autodoor":
                 entities.extend(
                     [
                         LiebherrCover(api, coordinator, appliance, control),
@@ -49,7 +49,7 @@ class LiebherrCover(CoverEntity):
         self._coordinator = coordinator
         self._appliance = appliance
         self._control = control
-        self._identifier = control.get("identifier", control["controlType"])
+        self._identifier = control.get("identifier", control["type"])
         self._attr_name = f"{appliance['nickname']} {self._identifier}"
         self._attr_unique_id = f"{appliance['deviceId']}_{self._identifier}"
         self._is_opening = False
@@ -61,12 +61,11 @@ class LiebherrCover(CoverEntity):
         return {
             "identifiers": {(DOMAIN, self._appliance["deviceId"])},
             "name": self._appliance.get(
-                "nickname", f"Liebherr Device {self._appliance['deviceId']}"
+                "nickname", f"Liebherr HomeAPI Appliance {self._appliance['deviceId']}"
             ),
             "manufacturer": "Liebherr",
             "model": self._appliance.get("model", self._appliance["model"]),
             "sw_version": self._appliance.get("softwareVersion", ""),
-            "configuration_url": self._appliance.get("image", ""),
         }
 
     @property
@@ -82,21 +81,18 @@ class LiebherrCover(CoverEntity):
             if device.get("deviceId") == self._appliance["deviceId"]:
                 controls = device.get("controls", [])
                 for control in controls:
-                    if (
-                        control.get("identifier", control["controlType"])
-                        == self._identifier
-                    ):
+                    if control.get("identifier", control["type"]) == self._identifier:
                         return control.get("active", False)
         return False
 
     @property
     def available(self):
         """Return True if the cover is available."""
-        return self._appliance["available"]
+        return True
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
-        if self._control["controlType"] == "autodoor":
+        if self._control["type"] == "autodoor":
             await self._api.set_value(
                 self._appliance["deviceId"] + "/" + self._control["endpoint"],
                 {"autoDoorMode": "OPEN"},

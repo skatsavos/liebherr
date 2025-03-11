@@ -11,6 +11,13 @@
             }
         }
     },
+    "config": {
+        "step": {
+            "user": {
+                "description": "Verbinde dein Gerät über die **SmartDevice-App** mit deinem WLAN-Netzwerk.\n\n**1. Lade die [SmartDevice](https://smartdevice.onelink.me/OrY5/8neax8lp)-App**\n**2. Folge den [Anweisungen](https://go.liebherr.com/cb2ct1), um dein Gerät zu verbinden**\n**3. Erzeuge einen API-Schlüssel in der SmartDevice-App**\n\nGehe zu *Einstellungen* in der SmartDevice-App und wähle **“Werden Sie Betatester”** und aktiviere **“Betatest HomeAPI”**.\nKopiere den API-Schlüssel und setze ihn hier ein. Der API-Schlüssel kann nur **ein mal** kopiert werden.\nSobald du den Bildschirm verlässt, kann der Code **nicht** mehr kopiert werden.\nFalls du deinen Schlüssel vergessen hast, musst du über die App einen neuen erstellen."
+            }
+        }
+    },
     "notificationType": {
         "door_alarm": "Türalarm",
         "auto_door_obstacle_alarm": "AutoDoor Hindernis erkannt",
