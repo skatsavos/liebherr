@@ -1,0 +1,30 @@
+{
+  "title": "Liebherr",
+  "options": {
+    "step": {
+      "init": {
+        "title": "Notifications",
+        "description": "Si vous souhaitez recevoir des alertes et des notifications pour vos appareils Liebherr, veuillez sélectionner les appareils pour lesquels vous souhaitez recevoir des notifications.",
+        "data": {
+          "devices_to_notify": "Appareils pour lesquels vous souhaitez recevoir des notifications :"
+        }
+      }
+    }
+  },
+  "config": {
+    "step": {
+      "user": {
+        "description": "Connectez votre appareil au réseau WiFi de votre domicile via l'application **SmartDevice**.\n\n**1. [Téléchargez](https://smartdevice.onelink.me/OrY5/8neax8lp) l'application**\n**2. Suivez les [instructions](https://go.liebherr.com/cb2ct1) pour connecter votre appareil**\n**3. Obtenez votre clé API via l'application SmartDevice**\n\nAccédez aux *Paramètres* dans l'application SmartDevice et sélectionnez **“Fonctionnalités bêta”**, puis activez HomeAPI.\n\nCopiez la clé API et collez-la ci-dessous. La clé API ne peut être copiée **qu'une seule fois**.\n\nDès que vous quittez l'écran, le code **ne pourra plus** être copié.\n\nSi vous avez oublié votre clé, vous devez en générer une nouvelle via l'application."
+      }
+    }
+  },
+  "notificationType": {
+    "door_alarm": "Alarme de porte",
+    "auto_door_obstacle_alarm": "Obstacle détecté par AutoDoor",
+    "auto_door_overheat_alarm": "Moteur AutoDoor en surchauffe",
+    "upper_power_failure_alarm": "Coupure de courant",
+    "lower_power_failure_alarm": "Coupure de courant",
+    "upper_temperature_alarm": "Alarme de température",
+    "lower_temperature_alarm": "Alarme de température"
+  }
+}
