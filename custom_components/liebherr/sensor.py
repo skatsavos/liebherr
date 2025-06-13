@@ -24,11 +24,12 @@ async def async_setup_entry(
     for appliance in appliances:
         controls = await api.get_controls(appliance["deviceId"])
         if not controls:
-            _LOGGER.warning("No controls found for appliance %s", appliance["deviceId"])
+            _LOGGER.warning("No controls found for appliance %s",
+                            appliance["deviceId"])
             continue
 
         for control in controls:
-            match control["controlType"]:
+            match control["type"]:
                 case "biofresh":
                     entities.append(
                         LiebherrSensor(
@@ -95,9 +96,6 @@ async def async_setup_entry(
                         )
                     )
 
-    if not entities:
-        _LOGGER.error("No sensor entities created")
-
     async_add_entities(entities)
 
 
@@ -123,7 +121,7 @@ class LiebherrSensor(SensorEntity):
         self._coordinator = coordinator
         self._appliance = appliance
         self._control = control
-        self._identifier = control.get("identifier", control["controlType"])
+        self._identifier = control.get("identifier", control["type"])
         self._attr_name = f"{appliance['nickname']} {self._identifier} {attribute}"
         self._attr_unique_id = f"{appliance['deviceId']}_{self._identifier}_{attribute}"
         self._attribute = attribute
@@ -140,12 +138,11 @@ class LiebherrSensor(SensorEntity):
         return {
             "identifiers": {(DOMAIN, self._appliance["deviceId"])},
             "name": self._appliance.get(
-                "nickname", f"Liebherr Device {self._appliance['deviceId']}"
+                "nickname", f"Liebherr HomeAPI Appliance {self._appliance['deviceId']}"
             ),
             "manufacturer": "Liebherr",
             "model": self._appliance.get("model", self._appliance["model"]),
             "sw_version": self._appliance.get("softwareVersion", ""),
-            "configuration_url": self._appliance.get("image", ""),
         }
 
     @property
@@ -169,7 +166,7 @@ class LiebherrSensor(SensorEntity):
 
     def available(self):
         """Return True if the sensor is available."""
-        return self._appliance["available"]
+        return True
 
     async def async_update(self):
         """Fetch new state data for the sensor."""

@@ -20,16 +20,13 @@ class LiebherrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            # Validate the user input here (e.g., test API connectivity)
-            # If validation is successful, create the config entry
             return self.async_create_entry(
                 title="Liebherr SmartDevice", data=user_input
             )
 
         data_schema = vol.Schema(
             {
-                vol.Required("username"): str,
-                vol.Required("password"): str,
+                vol.Required("api-key"): str,
             }
         )
         return self.async_show_form(

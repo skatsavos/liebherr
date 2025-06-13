@@ -1,11 +1,11 @@
 {
     "domain": "liebherr",
     "name": "Liebherr",
-    "documentation": "https://github.com/bhuebschen/liebherr",
-    "issue_tracker": "https://github.com/bhuebschen/liebherr/issues",
-    "version": "0.0.9",
+    "version": "0.1.1",
     "dependencies": [],
     "config_flow": true,
+    "documentation": "https://github.com/bhuebschen/liebherr",
+    "issue_tracker": "https://github.com/bhuebschen/liebherr/issues",
     "iot_class": "cloud_polling",
     "codeowners": [
         "@bhuebschen"
@@ -17,6 +17,7 @@
         "climate",
         "switch",
         "select",
-        "sensor"
+        "sensor",
+        "cover"
     ]
 }

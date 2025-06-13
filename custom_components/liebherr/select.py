@@ -8,6 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .models import ModeControlRequest
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,11 +26,12 @@ async def async_setup_entry(
     for appliance in appliances:
         controls = await api.get_controls(appliance["deviceId"])
         if not controls:
-            _LOGGER.warning("No controls found for appliance %s", appliance["deviceId"])
+            _LOGGER.warning("No controls found for appliance %s",
+                            appliance["deviceId"])
             continue
 
         for control in controls:
-            if control["controlType"] in ("biofreshplus", "hydrobreeze"):
+            if control["type"] in ("biofreshplus", "hydrobreeze"):
                 entities.extend(
                     [
                         LiebherrSelect(api, coordinator, appliance, control),
@@ -48,11 +50,11 @@ class LiebherrSelect(SelectEntity):
         self._coordinator = coordinator
         self._appliance = appliance
         self._control = control
-        self._identifier = control.get("identifier", control["controlType"])
+        self._identifier = control.get("identifier", control["type"])
         self._attr_name = f"{appliance['nickname']} {self._identifier}"
         self._attr_unique_id = f"{appliance['deviceId']}_{self._identifier}"
         self._attr_options = control.get("supportedModes", [])
-        match control.get("identifier", control["controlType"]):
+        match control.get("identifier", control["type"]):
             case "biofreshplus":
                 self._attr_icon = "mdi:leaf"
             case "hydrobreeze":
@@ -65,12 +67,11 @@ class LiebherrSelect(SelectEntity):
         return {
             "identifiers": {(DOMAIN, self._appliance["deviceId"])},
             "name": self._appliance.get(
-                "nickname", f"Liebherr Device {self._appliance['deviceId']}"
+                "nickname", f"Liebherr HomeAPI Appliance {self._appliance['deviceId']}"
             ),
             "manufacturer": "Liebherr",
             "model": self._appliance.get("model", self._appliance["model"]),
             "sw_version": self._appliance.get("softwareVersion", ""),
-            "configuration_url": self._appliance.get("image", ""),
         }
 
     @property
@@ -86,10 +87,7 @@ class LiebherrSelect(SelectEntity):
             if device.get("deviceId") == self._appliance["deviceId"]:
                 controls = device.get("controls", [])
                 for control in controls:
-                    if (
-                        control.get("identifier", control["controlType"])
-                        == self._identifier
-                    ):
+                    if control.get("identifier", control["type"]) == self._identifier:
                         return control.get("currentMode", None)
         return None
 
@@ -99,9 +97,10 @@ class LiebherrSelect(SelectEntity):
             _LOGGER.error("Invalid option selected: %s", option)
             return
 
-        await self._api.set_value(
-            self._appliance["deviceId"] + "/" + self._control["endpoint"],
-            {self._control["controlType"] + "Mode": option},
+        data = ModeControlRequest(mode=option)
+        await self.api.set_value(
+            self._appliance["deviceId"], self._control["name"], data
         )
+
         await asyncio.sleep(5)
         await self._coordinator.async_request_refresh()
