@@ -62,7 +62,11 @@ class LiebherrSelect(SelectEntity):
                 self._attr_options = ["OFF", "LOW", "MEDIUM", "HIGH"]
             case "IceMakerControl":
                 self._attr_icon = "mdi:cube-outline"
-                self._attr_options = ["OFF", "ON", "MAX_ICE"]
+                has_max_ice = control.get("hasMaxIce", False)
+                if has_max_ice:
+                    self._attr_options = ["OFF", "ON", "MAX_ICE"]
+                else:
+                    self._attr_options = ["OFF", "ON"]
 
     @property
     def device_info(self):
