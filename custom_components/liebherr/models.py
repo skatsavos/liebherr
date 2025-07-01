@@ -30,3 +30,8 @@ class ModeZoneControlRequest:
 @dataclass
 class ModeControlRequest:
     mode: str
+
+@dataclass
+class IceMakerControlRequest:
+    zoneId: int
+    iceMakerMode: str  # "OFF", "ON", or "MAX_ICE"

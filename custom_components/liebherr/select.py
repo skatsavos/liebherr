@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .models import ModeControlRequest
+from .models import ModeControlRequest, IceMakerControlRequest
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ async def async_setup_entry(
             continue
 
         for control in controls:
-            if control["type"] in ("biofreshplus", "hydrobreeze"):
+            if control["type"] in ("biofreshplus", "hydrobreeze", "IceMakerControl"):
                 entities.extend(
                     [
                         LiebherrSelect(api, coordinator, appliance, control),
@@ -60,6 +60,9 @@ class LiebherrSelect(SelectEntity):
             case "hydrobreeze":
                 self._attr_icon = "mdi:water"
                 self._attr_options = ["OFF", "LOW", "MEDIUM", "HIGH"]
+            case "IceMakerControl":
+                self._attr_icon = "mdi:cube-outline"
+                self._attr_options = ["OFF", "ON", "MAX_ICE"]
 
     @property
     def device_info(self):
@@ -88,7 +91,10 @@ class LiebherrSelect(SelectEntity):
                 controls = device.get("controls", [])
                 for control in controls:
                     if control.get("identifier", control["type"]) == self._identifier:
-                        return control.get("currentMode", None)
+                        if control["type"] == "IceMakerControl":
+                            return control.get("iceMakerMode", None)
+                        else:
+                            return control.get("currentMode", None)
         return None
 
     async def async_select_option(self, option: str):
@@ -97,10 +103,16 @@ class LiebherrSelect(SelectEntity):
             _LOGGER.error("Invalid option selected: %s", option)
             return
 
-        data = ModeControlRequest(mode=option)
-        await self.api.set_value(
-            self._appliance["deviceId"], self._control["name"], data
-        )
+        if self._control["type"] == "IceMakerControl":
+            data = IceMakerControlRequest(zoneId=self._control.get("zoneId"), iceMakerMode=option)
+            await self._api.set_value(
+                self._appliance["deviceId"], self._control["name"], data
+            )
+        else:
+            data = ModeControlRequest(mode=option)
+            await self.api.set_value(
+                self._appliance["deviceId"], self._control["name"], data
+            )
 
         await asyncio.sleep(5)
         await self._coordinator.async_request_refresh()

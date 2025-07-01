@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .models import BaseToggleControlRequest, ZoneToggleControlRequest
+from .models import BaseToggleControlRequest, ZoneToggleControlRequest, IceMakerControlRequest
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,8 +88,6 @@ class LiebherrSwitch(SwitchEntity):
                 self._attr_icon = "mdi:weather-night"
             case "bottletimer":
                 self._attr_icon = "mdi:timer-sand"
-            case "icemaker":
-                self._attr_icon = "mdi:ice-cream"
 
     @property
     def device_info(self):
@@ -120,7 +118,16 @@ class LiebherrSwitch(SwitchEntity):
                     if self._control_name == control.get("name"):
                         if self._zoneId == control.get("zoneId"):
                             _LOGGER.debug(control)
-                            return control.get("value", False)
+                            control_type = control.get("type")
+                            # Handle control types individually
+                            if control_type == "ToggleControl":
+                                return control.get("value") is True
+                            else:
+                                _LOGGER.warning(
+                                    "Unsupported control type '%s' for control '%s'",
+                                    control_type, self._control_name
+                                )
+                                return False
         return False
 
     def setControlValue(self, value):
@@ -152,11 +159,6 @@ class LiebherrSwitch(SwitchEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn the switch on."""
-        if self._control["type"] == "IceMaker":
-            await self._api.set_value(
-                self._appliance["deviceId"] + "/" + self._control["name"],
-                {"iceMakerMode": "ON"},
-            )
         if self._control["type"] == "BottleTimer":
             await self._api.set_value(
                 self._appliance["deviceId"] + "/" + self._control["name"],
@@ -182,11 +184,6 @@ class LiebherrSwitch(SwitchEntity):
 
     async def async_turn_off(self, **kwargs):
         """Turn the switch off."""
-        if self._control["type"] == "icemaker":
-            await self._api.set_value(
-                self._appliance["deviceId"] + "/" + self._control["name"],
-                {"iceMakerMode": "OFF"},
-            )
         if self._control["type"] == "bottletimer":
             await self._api.set_value(
                 self._appliance["deviceId"] + "/" + self._control["name"],
