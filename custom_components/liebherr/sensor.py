@@ -43,7 +43,7 @@ async def async_setup_entry(
                             "mdi:thermometer",
                         )
                     )
-                case "autodoor":
+                case "AutoDoorControl":
                     entities.append(
                         LiebherrSensor(
                             api,
