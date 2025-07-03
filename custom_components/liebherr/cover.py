@@ -11,6 +11,7 @@ from homeassistant.const import STATE_OPEN, STATE_CLOSED, STATE_OPENING, STATE_U
 
 
 from .const import DOMAIN
+from .models import AutoDoorControl
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class LiebherrCover(CoverEntity):
                 "nickname", f"Liebherr HomeAPI Appliance {self._appliance['deviceId']}"
             ),
             "manufacturer": "Liebherr",
-            "model": self._appliance.get("model", self._appliance["model"]),
+            "model": self._appliance.get("model", ""),
             "sw_version": self._appliance.get("softwareVersion", ""),
         }
         
@@ -121,12 +122,8 @@ class LiebherrCover(CoverEntity):
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
-        if self._control["type"] == "AutoDoorControl":
-            payload = {
-                "zoneId": self._control["zoneId"],
-                "value": True
-            }
-            await self._api.set_value(self._appliance["deviceId"], self._control["name"], payload)
+        data = AutoDoorControl(zoneId=self._control.get("zoneId"), value=True)
+        await self._api.set_value(self._appliance["deviceId"], self._control["name"], data)
         self._is_opening = True
         await asyncio.sleep(5)
         self._is_opening = False
@@ -135,9 +132,6 @@ class LiebherrCover(CoverEntity):
     async def async_close_cover(self, **kwargs):
         """Close the cover."""
         if self._control["type"] == "AutoDoorControl":
-            payload = {
-                "zoneId": self._control["zoneId"],
-                "value": False 
-            }
-            await self._api.set_value(self._appliance["deviceId"], self._control["name"], payload)
+            data = AutoDoorControl(zoneId=self._control.get("zoneId"), value=False)
+            await self._api.set_value(self._appliance["deviceId"], self._control["name"], data)
         await self._coordinator.async_request_refresh()
