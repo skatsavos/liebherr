@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .models import ModeControlRequest, IceMakerControlRequest, AutoDoorControl
+from .models import ModeControlRequest, IceMakerControlRequest
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ async def async_setup_entry(
             continue
 
         for control in controls:
-            if control["type"] in ("biofreshplus", "hydrobreeze", "IceMakerControl", "AutoDoorControl"):
+            if control["type"] in ("biofreshplus", "hydrobreeze", "IceMakerControl"):
                 entities.extend(
                     [
                         LiebherrSelect(api, coordinator, appliance, control),
@@ -67,9 +67,6 @@ class LiebherrSelect(SelectEntity):
                     self._attr_options = ["OFF", "ON", "MAX_ICE"]
                 else:
                     self._attr_options = ["OFF", "ON"]
-            case "AutoDoorControl":
-                self._attr_icon = "mdi:door"
-                self._attr_options = []  # options will be dynamic
 
     @property
     def device_info(self):
@@ -100,19 +97,6 @@ class LiebherrSelect(SelectEntity):
                     if control.get("identifier", control["type"]) == self._identifier:
                         if control["type"] == "IceMakerControl":
                             return control.get("iceMakerMode", None)
-                        elif control["type"] == "AutoDoorControl":
-                            val = control.get("value")
-                            self._current_api_value = val
-                            if val == "MOVING":
-                                self._attr_options = []  # disable
-                                return None
-                            elif val == "OPEN":
-                                self._attr_options = ["CLOSE"]
-                                return "OPEN"
-                            elif val == "CLOSED":
-                                self._attr_options = ["OPEN"]
-                                return "CLOSE"
-                            return None
                         else:
                             return control.get("currentMode", None)
         return None
@@ -128,17 +112,6 @@ class LiebherrSelect(SelectEntity):
             await self._api.set_value(
                 self._appliance["deviceId"], self._control["name"], data
             )
-        elif self._control["type"] == "AutoDoorControl":
-            if option == "OPEN":
-                value = True
-            elif option == "CLOSE":
-                value = False
-            else:
-                _LOGGER.error("Invalid option for AutoDoorControl: %s", option)
-                return
-            data = AutoDoorControl(zoneId=self._control.get("zoneId"), value=value)
-            await self._api.set_value(
-                self._appliance["deviceId"], self._control["name"], data.__dict__)
         else:
             data = ModeControlRequest(mode=option)
             await self._api.set_value(
