@@ -35,3 +35,8 @@ class ModeControlRequest:
 class IceMakerControlRequest:
     zoneId: int
     iceMakerMode: str  # "OFF", "ON", or "MAX_ICE"
+
+@dataclass
+class AutoDoorControl:
+    zoneId: int
+    value: bool  # True = open, False = close
