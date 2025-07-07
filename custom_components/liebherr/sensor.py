@@ -136,23 +136,19 @@ class LiebherrSensor(SensorEntity):
                 ):
                     return control.get(self._attribute)
         return None
-        
+
     @property
     def state(self):
         """Return the state of the sensor."""
         value = self._get_current_value()
-
-        if value == "MOVING":
-            # Schedule another update in 5 seconds
-            self.hass.loop.create_task(self._delayed_refresh())
-
+        if value is None:
+            _LOGGER.debug(
+                "No value for sensor %s on zone %s, attribute %s",
+                self._identifier,
+                self._zone_id,
+                self._attribute,
+            )
         return value
-
-    async def _delayed_refresh(self):
-        """Force refresh after delay if moving detected."""
-        await asyncio.sleep(5)
-        await self._coordinator.async_request_refresh()
-
 
     @property
     def unit_of_measurement(self):
